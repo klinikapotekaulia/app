@@ -361,7 +361,7 @@ firebase.auth().onAuthStateChanged(function (user) {
         db.collection('users').doc(user.uid).get()
             .then(function (doc) {
                 if (!doc.exists) {
-                    Utils.toast('Profil akun tidak ditemukan. Hubungi Admin.', 'error');
+                    Utils.toast('Profil akun tidak ditemukan. Pastikan dokumen users/' + user.uid + ' ada di Firestore.', 'error');
                     firebase.auth().signOut();
                     return;
                 }
@@ -374,16 +374,16 @@ firebase.auth().onAuthStateChanged(function (user) {
                 startApp(data.role || 'apotek', data.nama || user.email || 'User');
             })
             .catch(function (err) {
-                Utils.toast('Gagal memuat profil: ' + err.message, 'error');
+                console.error('[APP] Firestore get user error:', err.code, err.message);
+                if (err.code === 'permission-denied') {
+                    Utils.toast('Akses Firestore ditolak. Periksa Rules di Firebase Console.', 'error');
+                } else {
+                    Utils.toast('Gagal memuat profil: ' + err.message, 'error');
+                }
                 firebase.auth().signOut();
             });
 
     } else {
-        // User belum login — tampilkan form login
-        // window.AppAuth didefinisikan di auth.js yang diload setelah app.js
-        if (window.AppAuth && typeof window.AppAuth.renderLogin === 'function') {
-            window.AppAuth.renderLogin();
-        }
         // Reset UI navbar
         var elName   = document.getElementById('user-name');
         var elRole   = document.getElementById('user-role');
@@ -391,5 +391,19 @@ firebase.auth().onAuthStateChanged(function (user) {
         if (elName)   elName.textContent   = 'Tamu';
         if (elRole)   elRole.textContent   = '-';
         if (elAvatar) elAvatar.textContent = '?';
+
+        // Tampilkan form login.
+        // auth.js diload tepat setelah app.js di index.html, sehingga AppAuth
+        // pasti sudah tersedia saat onAuthStateChanged pertama kali dipanggil.
+        // Tapi jika karena alasan apapun belum ready, tunggu sebentar lalu coba lagi.
+        function showLogin() {
+            if (window.AppAuth && typeof window.AppAuth.renderLogin === 'function') {
+                window.AppAuth.renderLogin();
+            } else {
+                // auth.js belum selesai load — coba lagi 50ms kemudian
+                setTimeout(showLogin, 50);
+            }
+        }
+        showLogin();
     }
 });
