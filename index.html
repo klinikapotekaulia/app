@@ -37,7 +37,7 @@
     </script>
     <link rel="stylesheet" href="css/style.css">
 
-    <!-- Theme init (sebelum render agar tidak flash) -->
+    <!-- Theme init SEBELUM render agar tidak flash -->
     <script>
         (function () {
             var saved = localStorage.getItem('theme');
@@ -49,6 +49,15 @@
 </head>
 
 <body class="h-full overflow-hidden bg-slate-50 dark:bg-slate-900 text-gray-800 dark:text-gray-200">
+
+    <noscript>
+        <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem;text-align:center;font-family:sans-serif">
+            <div>
+                <h1 style="font-size:1.25rem;font-weight:700;color:#dc2626;margin-bottom:.5rem">JavaScript Diperlukan</h1>
+                <p style="color:#64748b;font-size:.875rem">Aplikasi ini memerlukan JavaScript. Aktifkan JavaScript di browser Anda lalu refresh halaman.</p>
+            </div>
+        </div>
+    </noscript>
 
     <div class="flex h-full overflow-hidden">
 
@@ -134,17 +143,14 @@
     <!-- ============================================================
          SCRIPTS — Urutan SANGAT PENTING:
          1. Lucide Icons
-         2. Firebase SDK (compat)
+         2. Supabase JS Client (pinned version)
          3. SheetJS & PDF libs
          4. app.js  ← mendefinisikan Utils, App, navigateTo, dll
-         5. auth.js ← HARUS SETELAH app.js karena butuh Utils
+         5. auth.js ← HARUS SETELAH app.js karena butuh window.sb
          ============================================================ -->
 
     <script src="https://cdn.jsdelivr.net/npm/lucide@0.383.0/dist/umd/lucide.min.js"></script>
-
-    <!-- Supabase JS Client -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
@@ -158,8 +164,9 @@
         function toggleMobileSidebar() {
             var sidebar = document.getElementById('mobile-sidebar');
             var overlay = document.getElementById('sidebar-overlay');
-            var isOpen  = !sidebar.classList.contains('-translate-x-full');
+            if (!sidebar || !overlay) return;
 
+            var isOpen = !sidebar.classList.contains('-translate-x-full');
             if (isOpen) {
                 sidebar.classList.add('-translate-x-full');
                 overlay.classList.add('hidden');
@@ -168,17 +175,10 @@
                 sidebar.classList.remove('-translate-x-full');
                 overlay.classList.remove('hidden');
                 document.body.style.overflow = 'hidden';
-
-                // Salin menu dari desktop ke mobile jika belum ada
-                var src = document.getElementById('sidebar-menu');
-                var dst = document.getElementById('mobile-sidebar-menu');
-                if (src && dst && dst.children.length === 0 && src.children.length > 0) {
-                    dst.innerHTML = src.innerHTML;
-                    if (window.lucide) lucide.createIcons();
-                }
             }
         }
 
+        // Tutup mobile sidebar otomatis saat resize ke desktop
         window.addEventListener('resize', function () {
             if (window.innerWidth >= 1024) {
                 var sidebar = document.getElementById('mobile-sidebar');
