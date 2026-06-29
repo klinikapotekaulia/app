@@ -1,11 +1,17 @@
 /**
- * js/pengaturan/tindakan.js
+ * js/pengaturan/tindakan.js — VERSI SUPABASE FIX
  * Master Tindakan Klinik & Apotek (Harga, Modal, Tuslah)
  */
 
 window.AppPengaturanTindakan = {
     data: [],
     filterKategori: 'semua',
+
+    // Wajib ada untuk cleanup module (app.js)
+    destroy: function() {
+        this.data = [];
+        this.filterKategori = 'semua';
+    },
 
     render: function() {
         var html = '<div class="page-enter max-w-3xl">';
@@ -20,8 +26,8 @@ window.AppPengaturanTindakan = {
         // Tab Filter
         html += '<div class="flex gap-1 mb-4 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">';
         var tabs = [{ id: 'semua', label: 'Semua' }, { id: 'klinik', label: 'Klinik' }, { id: 'apotek', label: 'Apotek' }];
-        tabs.forEach(t => {
-            var active = (this.filterKategori === t.id) ? ' bg-white dark:bg-slate-700 shadow-sm text-primary-600 dark:text-primary-400 font-semibold' : ' text-slate-500 dark:text-slate-400 hover:text-gray-700';
+        tabs.forEach(function(t) {
+            var active = (AppPengaturanTindakan.filterKategori === t.id) ? ' bg-white dark:bg-slate-700 shadow-sm text-primary-600 dark:text-primary-400 font-semibold' : ' text-slate-500 dark:text-slate-400 hover:text-gray-700';
             html += '<button onclick="AppPengaturanTindakan.setFilter(\'' + t.id + '\')" class="flex-1 py-2 text-sm rounded-md transition' + active + '">' + t.label + '</button>';
         });
         html += '</div>';
@@ -31,18 +37,14 @@ window.AppPengaturanTindakan = {
         return html;
     },
 
-        init: function() {
-        // HAPUS orderBy('kategori') agar tidak butuh Composite Index Firebase
-        window.sb.from('master_tindakan').order('nama', { ascending: true }).get().then(snap => {
-            AppPengaturanTindakan.data = [];
-            (data || []).forEach(doc => { 
-                var d = doc; 
-                d.id = doc.id; 
-                AppPengaturanTindakan.data.push(d); 
-            });
+    init: function() {
+        // FIX: Hapus .get(), Supabase akan langsung eksekusi promise
+        window.sb.from('master_tindakan').select('*').order('nama', { ascending: true }).then(function(res) {
+            // FIX: Supabase menyimpan data di res.data, bukan di root array
+            AppPengaturanTindakan.data = res.data || [];
             
             // Urutkan Kategori manual pakai JavaScript (Klinik dulu, baru Apotek)
-            AppPengaturanTindakan.data.sort((a, b) => {
+            AppPengaturanTindakan.data.sort(function(a, b) {
                 if (a.kategori < b.kategori) return -1;
                 if (a.kategori > b.kategori) return 1;
                 return 0;
@@ -52,16 +54,15 @@ window.AppPengaturanTindakan = {
             if (AppPengaturanTindakan.data.length === 0) {
                 AppPengaturanTindakan.seedDefaultData();
             } else {
-                // Langsung paksa render
                 AppPengaturanTindakan.renderList();
             }
-        }).catch(err => {
+        }).catch(function(err) {
             console.error(err);
             Utils.toast('Gagal memuat: ' + err.message, 'error');
         });
     },
 
-            seedDefaultData: function() {
+    seedDefaultData: function() {
         var defaults = [
             { nama: 'Cek Tensi', kategori: 'klinik', harga_jual: 15000, modal: 13000, aktif: true },
             { nama: 'Cek Gula Darah', kategori: 'klinik', harga_jual: 15000, modal: 13000, aktif: true },
@@ -75,26 +76,16 @@ window.AppPengaturanTindakan = {
             { nama: 'Tindakan Nebu', kategori: 'apotek', harga_jual: 15000, modal: 13000, aktif: true }
         ];
 
-        var batch = db.batch();
-        var dataUntukTampil = []; // Siapkan wadah untuk tampilan
-
-        defaults.forEach(function(item) {
-            var newDocRef = window.sb.from('master_tindakan').doc();
-            batch.set(newDocRef, item);
-            
-            // Simpan data beserta ID-nya untuk langsung ditampilkan
-            var itemDenganId = Object.assign({}, item);
-            itemDenganId.id = newDocRef.id;
-            dataUntukTampil.push(itemDenganId);
-        });
-        
-        batch.commit().then(function() {
+        // FIX: Hapus db.batch(). Gunakan insert langsung dari Supabase
+        window.sb.from('master_tindakan').insert(defaults).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Data tindakan awal berhasil dibuat!', 'success');
             
-            // LANGSUNG MASUKKAN KE DATA DAN RENDER, TANPA BACA ULANG DARI FIREBASE
-            AppPengaturanTindakan.data = dataUntukTampil;
+            // Ambil data yang baru saja di-insert (supaya dapat ID-nya)
+            AppPengaturanTindakan.data = res.data || [];
             AppPengaturanTindakan.renderList();
         }).catch(function(err) {
+            console.error(err);
             Utils.toast('Gagal setup data awal: ' + err.message, 'error');
         });
     },
@@ -110,7 +101,7 @@ window.AppPengaturanTindakan = {
 
         var list = this.data;
         if (this.filterKategori !== 'semua') {
-            list = list.filter(t => t.kategori === this.filterKategori);
+            list = list.filter(function(t) { return t.kategori === AppPengaturanTindakan.filterKategori; });
         }
 
         if (list.length === 0) {
@@ -131,7 +122,7 @@ window.AppPengaturanTindakan = {
         html += '<th class="px-4 py-3 text-right">Aksi</th>';
         html += '</tr></thead><tbody>';
 
-        list.forEach(t => {
+        list.forEach(function(t) {
             var tuslah = (t.harga_jual || 0) - (t.modal || 0);
             var safeName = (t.nama || '-').replace(/'/g, "\\'");
             var katBadge = (t.kategori === 'klinik') ? '<span class="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-600 px-2 py-0.5 rounded-full">Klinik</span>' : '<span class="text-xs bg-teal-50 dark:bg-teal-900/30 text-teal-600 px-2 py-0.5 rounded-full">Apotek</span>';
@@ -152,12 +143,12 @@ window.AppPengaturanTindakan = {
 
         html += '</tbody></table></div></div>';
         container.innerHTML = html;
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     },
 
     openForm: function(id) {
         var isEdit = !!id;
-        var t = isEdit ? this.data.find(x => x.id === id) : {};
+        var t = isEdit ? this.data.find(function(x) { return x.id === id; }) : {};
         
         var html = '<div class="p-6">';
         html += '<div class="flex items-center justify-between mb-5"><h3 class="text-lg font-semibold text-gray-800 dark:text-white">' + (isEdit ? 'Edit' : 'Tambah') + ' Tindakan</h3><button onclick="Utils.closeModal()" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><i data-lucide="x" class="w-5 h-5 text-slate-400"></i></button></div>';
@@ -184,15 +175,16 @@ window.AppPengaturanTindakan = {
         html += '</form></div>';
 
         Utils.openModal(html);
-        
-        // Hitung preview tuslah saat form dibuka
         this.previewTuslah();
 
-        setTimeout(() => {
-            document.getElementById('form-tindakan').addEventListener('submit', function(e) {
-                e.preventDefault();
-                AppPengaturanTindakan.simpan();
-            });
+        setTimeout(function() {
+            var form = document.getElementById('form-tindakan');
+            if(form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    AppPengaturanTindakan.simpan();
+                });
+            }
         }, 100);
     },
 
@@ -213,8 +205,7 @@ window.AppPengaturanTindakan = {
             kategori: document.getElementById('ft-kat').value,
             harga_jual: parseFloat(document.getElementById('ft-jual').value) || 0,
             modal: parseFloat(document.getElementById('ft-modal').value) || 0,
-            aktif: document.getElementById('ft-aktif').value === 'true',
-            updatedAt: new Date().toISOString()
+            aktif: document.getElementById('ft-aktif').value === 'true'
         };
 
         if (!obj.nama || !obj.kategori) {
@@ -224,24 +215,45 @@ window.AppPengaturanTindakan = {
 
         var p;
         if (isEdit) {
-            p = window.sb.from('master_tindakan').update(obj);
+            // FIX: Tambahkan .eq('id', id) agar tidak mengubah seluruh baris
+            p = window.sb.from('master_tindakan').update(obj).eq('id', idField.value);
         } else {
-            obj.createdAt = new Date().toISOString();
             p = window.sb.from('master_tindakan').insert(obj);
         }
 
-        p.then(() => {
+        p.then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Tindakan berhasil disimpan!', 'success');
             Utils.closeModal();
             AppPengaturanTindakan.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) {
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error');
+        });
     },
 
     hapus: function(id, nama) {
-        if (!confirm('Hapus tindakan "' + nama + '"?')) return;
-        window.sb.from('master_tindakan').delete().eq('id', id).then(() => {
+        // Ganti confirm() dengan custom modal
+        Utils.openModal(
+            '<div class="p-6 text-center">' +
+            '<i data-lucide="alert-triangle" class="w-12 h-12 text-red-400 mx-auto mb-3"></i>' +
+            '<h3 class="text-lg font-bold text-slate-800 dark:text-white mb-2">Hapus Tindakan</h3>' +
+            '<p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Yakin ingin menghapus <strong>' + Utils.escapeHtml(nama) + '</strong>?</p>' +
+            '<div class="flex gap-3 justify-center">' +
+            '<button onclick="Utils.closeModal()" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm hover:bg-slate-100 dark:hover:bg-slate-700">Batal</button>' +
+            '<button onclick="AppPengaturanTindakan._doHapus(\'' + id + '\')" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700">Ya, Hapus</button>' +
+            '</div></div>'
+        );
+    },
+
+    _doHapus: function(id) {
+        Utils.closeModal();
+        window.sb.from('master_tindakan').delete().eq('id', id).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Berhasil dihapus', 'success');
             AppPengaturanTindakan.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) {
+            Utils.toast('Gagal: ' + err.message, 'error');
+        });
     }
 };
