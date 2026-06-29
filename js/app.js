@@ -157,11 +157,31 @@ var menuStructure = {
 // ✅ FIX #2 — admin sekarang punya akses keuangan & semua pengaturan
 // ✅ FIX #10 — keuangan dibatasi, tidak lagi punya akses penuh klinik & apotek
 var roleAccess = {
+    // Klinik: Hanya operasional klinik + absensi check-in
     klinik:   ['utama', 'klinik', 'manajemen.absensi'],
-    apotek:   ['utama', 'apotek', 'laporan.pengeluaran', 'laporan.penjualanHarian', 'manajemen.absensi'],
-    admin:    ['utama', 'klinik', 'apotek', 'laporan', 'manajemen', 'keuangan', 'pengaturan'],
-    keuangan: ['utama', 'laporan', 'manajemen.karyawan', 'manajemen.absensi', 'keuangan', 'pengaturan.profil']
-};
+    
+    // Apotek: Operasional apotek penuh + laporan keuangan harian + absensi
+    apotek:   [
+        'utama', 'apotek', 
+        'laporan.hutang', 'laporan.pengeluaran', 'laporan.piutang', 'laporan.penjualanHarian', 
+        'manajemen.absensi'
+    ],
+    
+    // Admin (Kepala): Monitor semua, tapi TIDAK urus keuangan detail/payroll
+    admin:    [
+        'utama', 'klinik', 'apotek', 'laporan', 
+        'manajemen.karyawan', 'manajemen.absensi', 
+        'pengaturan.profil', 'pengaturan.tindakan', 'pengaturan.users'
+    ],
+    
+    // Keuangan (PSA): Akses penuh ke operasional (untuk input) + Keuangan + Pengaturan Khusus
+    keuangan: [
+        'utama', 'klinik', 'apotek', 'laporan', 
+        'manajemen.karyawan', 'manajemen.absensi', 
+        'keuangan', 
+        'pengaturan.profil', 'pengaturan.pembagian', 'pengaturan.tindakan', 'pengaturan.gaji', 'pengaturan.users'
+    ]
+};;
 
 // ============================================================
 // 6. RENDER SIDEBAR
