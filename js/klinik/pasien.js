@@ -1,5 +1,5 @@
 /**
- * js/klinik/pasien.js
+ * js/klinik/pasien.js — VERSI SUPABASE FIX
  * Master Data Pasien + Fitur Import Excel
  */
 
@@ -7,6 +7,13 @@ window.AppKlinikPasien = {
     data: [],
     searchQuery: '',
     importData: [],
+
+    // Wajib ada untuk cleanup module (app.js)
+    destroy: function() {
+        this.data = [];
+        this.searchQuery = '';
+        this.importData = [];
+    },
 
     render: function() {
         var html = '<div class="page-enter max-w-4xl">';
@@ -34,11 +41,15 @@ window.AppKlinikPasien = {
     },
 
     init: function() {
-        window.sb.from('pasien').order('nama', { ascending: true }).get().then(snap => {
-            AppKlinikPasien.data = [];
-            (data || []).forEach(doc => { var d = doc; d.id = doc.id; AppKlinikPasien.data.push(d); });
+        // FIX: Hapus .get(), gunakan .select('*')
+        window.sb.from('pasien').select('*').order('nama', { ascending: true }).then(function(res) {
+            // FIX: Supabase menyimpan data di res.data
+            AppKlinikPasien.data = res.data || [];
             AppKlinikPasien.renderList();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error'); 
+        });
     },
 
     onSearch: function(val) {
@@ -52,10 +63,10 @@ window.AppKlinikPasien = {
 
         var list = this.data;
         if (this.searchQuery) {
-            list = list.filter(p => 
-                (p.nama && p.nama.toLowerCase().includes(this.searchQuery)) || 
-                (p.nomor_rm && p.nomor_rm.toLowerCase().includes(this.searchQuery))
-            );
+            list = list.filter(function(p) { 
+                return (p.nama && p.nama.toLowerCase().includes(AppKlinikPasien.searchQuery)) || 
+                       (p.nomor_rm && p.nomor_rm.toLowerCase().includes(AppKlinikPasien.searchQuery));
+            });
         }
 
         if (list.length === 0) {
@@ -75,16 +86,17 @@ window.AppKlinikPasien = {
         html += '<th class="px-4 py-3 text-right">Aksi</th>';
         html += '</tr></thead><tbody>';
 
-        list.forEach(p => {
-            // FIX: escape penuh (kutip ganda, backslash, dsb) supaya tidak bisa breakout onclick.
+        list.forEach(function(p) {
             var safeName = JSON.stringify(p.nama || '-').slice(1, -1).replace(/'/g, "\\'");
-            var alergi = p.alergiObat ? '<span class="text-xs bg-red-50 dark:bg-red-900/30 text-red-600 px-2 py-0.5 rounded-full">' + Utils.escapeHtml(p.alergiObat) + '</span>' : '<span class="text-xs text-slate-400">-</span>';
+            // FIX: Ganti p.alergiObat menjadi p.alergi_obat
+            var alergi = p.alergi_obat ? '<span class="text-xs bg-red-50 dark:bg-red-900/30 text-red-600 px-2 py-0.5 rounded-full">' + Utils.escapeHtml(p.alergi_obat) + '</span>' : '<span class="text-xs text-slate-400">-</span>';
 
             html += '<tr class="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">';
             html += '<td class="px-4 py-3 font-mono text-xs text-primary-600 dark:text-primary-400 font-semibold">' + Utils.escapeHtml(p.nomor_rm || '-') + '</td>';
             html += '<td class="px-4 py-3 font-medium text-gray-800 dark:text-white">' + Utils.escapeHtml(p.nama) + '</td>';
             html += '<td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell">' + Utils.escapeHtml(p.jenis_kelamin || '-') + '</td>';
-            html += '<td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell">' + Utils.escapeHtml(p.noTelepon || '-') + '</td>';
+            // FIX: Ganti p.noTelepon menjadi p.telepon
+            html += '<td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell">' + Utils.escapeHtml(p.telepon || '-') + '</td>';
             html += '<td class="px-4 py-3 hidden lg:table-cell">' + alergi + '</td>';
             html += '<td class="px-4 py-3 text-right space-x-1">';
             html += '<button onclick="AppKlinikPasien.openForm(\'' + p.id + '\')" class="p-1.5 text-slate-400 hover:text-primary-600 rounded" title="Edit"><i data-lucide="pencil" class="w-4 h-4"></i></button>';
@@ -96,12 +108,12 @@ window.AppKlinikPasien = {
         html += '<p class="text-xs text-slate-400 mt-2 text-right">Total: ' + list.length + ' pasien</p>';
         
         container.innerHTML = html;
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     },
 
     openForm: function(id) {
         var isEdit = !!id;
-        var p = isEdit ? this.data.find(x => x.id === id) : {};
+        var p = isEdit ? this.data.find(function(x) { return x.id === id; }) : {};
         
         var nextRM = '';
         if (!isEdit) {
@@ -124,12 +136,14 @@ window.AppKlinikPasien = {
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tanggal Lahir</label><input type="date" id="fp-tgl" value="' + (p.tanggal_lahir || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
         html += '</div>';
 
-        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">No. Telepon</label><input type="text" id="fp-telp" value="' + Utils.escapeHtml(p.noTelepon || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" placeholder="08xxxxxxxxxx"></div>';
+        // FIX: Ganti noTelepon jadi telepon
+        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">No. Telepon</label><input type="text" id="fp-telp" value="' + Utils.escapeHtml(p.telepon || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" placeholder="08xxxxxxxxxx"></div>';
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Alamat</label><textarea id="fp-alamat" rows="2" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm">' + Utils.escapeHtml(p.alamat || '') + '</textarea></div>';
 
+        // FIX: Ganti alergiObat jadi alergi_obat
         html += '<div class="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">';
         html += '<label class="block text-sm font-medium text-red-700 dark:text-red-400 mb-1">⚠️ Alergi Obat (Jika ada)</label>';
-        html += '<input type="text" id="fp-alergi" value="' + Utils.escapeHtml(p.alergiObat || '') + '" class="w-full px-3 py-2 border border-red-300 dark:border-red-800 dark:bg-red-900/50 dark:text-white rounded-lg text-sm" placeholder="Contoh: Penisilin, Aspirin">';
+        html += '<input type="text" id="fp-alergi" value="' + Utils.escapeHtml(p.alergi_obat || '') + '" class="w-full px-3 py-2 border border-red-300 dark:border-red-800 dark:bg-red-900/50 dark:text-white rounded-lg text-sm" placeholder="Contoh: Penisilin, Aspirin">';
         html += '</div>';
 
         html += '<div class="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">';
@@ -142,11 +156,14 @@ window.AppKlinikPasien = {
 
         Utils.openModal(html);
 
-        setTimeout(() => {
-            document.getElementById('form-pasien').addEventListener('submit', function(e) {
-                e.preventDefault();
-                AppKlinikPasien.simpan();
-            });
+        setTimeout(function() {
+            var form = document.getElementById('form-pasien');
+            if(form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    AppKlinikPasien.simpan();
+                });
+            }
         }, 100);
     },
 
@@ -158,11 +175,10 @@ window.AppKlinikPasien = {
             nomor_rm: document.getElementById('fp-rm').value.trim(),
             nama: document.getElementById('fp-nama').value.trim(),
             jenis_kelamin: document.getElementById('fp-jk').value,
-            tanggal_lahir: document.getElementById('fp-tgl').value,
-            noTelepon: document.getElementById('fp-telp').value.trim(),
+            tanggal_lahir: document.getElementById('fp-tgl').value || null,
+            telepon: document.getElementById('fp-telp').value.trim(), // FIX: noTelepon -> telepon
             alamat: document.getElementById('fp-alamat').value.trim(),
-            alergiObat: document.getElementById('fp-alergi').value.trim(),
-            updatedAt: new Date().toISOString()
+            alergi_obat: document.getElementById('fp-alergi').value.trim() // FIX: alergiObat -> alergi_obat
         };
 
         if (!obj.nama || !obj.nomor_rm) {
@@ -172,25 +188,42 @@ window.AppKlinikPasien = {
 
         var p;
         if (isEdit) {
-            p = window.sb.from('pasien').update(obj);
+            // FIX: Tambahkan .eq('id', id)
+            p = window.sb.from('pasien').update(obj).eq('id', idField.value);
         } else {
-            obj.createdAt = new Date().toISOString();
             p = window.sb.from('pasien').insert(obj);
         }
 
-        p.then(() => {
+        p.then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Data pasien berhasil disimpan!', 'success');
             Utils.closeModal();
             AppKlinikPasien.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     hapus: function(id, nama) {
-        if (!confirm('Hapus data pasien "' + nama + '"?')) return;
-        window.sb.from('pasien').delete().eq('id', id).then(() => {
+        Utils.openModal(
+            '<div class="p-6 text-center">' +
+            '<i data-lucide="alert-triangle" class="w-12 h-12 text-red-400 mx-auto mb-3"></i>' +
+            '<h3 class="text-lg font-bold text-slate-800 dark:text-white mb-2">Hapus Data Pasien</h3>' +
+            '<p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Yakin ingin menghapus data <strong>' + Utils.escapeHtml(nama) + '</strong>? Tindakan ini tidak bisa dibatalkan.</p>' +
+            '<div class="flex gap-3 justify-center">' +
+            '<button onclick="Utils.closeModal()" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm hover:bg-slate-100 dark:hover:bg-slate-700">Batal</button>' +
+            '<button onclick="AppKlinikPasien._doHapus(\'' + id + '\')" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700">Ya, Hapus</button>' +
+            '</div></div>'
+        );
+    },
+
+    _doHapus: function(id) {
+        Utils.closeModal();
+        window.sb.from('pasien').delete().eq('id', id).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Berhasil dihapus', 'success');
             AppKlinikPasien.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { Utils.toast('Gagal: ' + err.message, 'error'); });
     },
 
     // ==========================================
@@ -200,7 +233,7 @@ window.AppKlinikPasien = {
     downloadTemplate: function() {
         var ws_data = [
             ['No. RM', 'Nama Lengkap', 'L/P', 'Tanggal Lahir (YYYY-MM-DD)', 'No. Telepon', 'Alamat', 'Alergi Obat'],
-            ['RM-2011-001', 'Contoh Nama Pasien', 'L', '1985-05-15', '081234567890', 'Jl. Contoh No. 1', 'Tidak ada'],
+            ['RM-2025-001', 'Contoh Nama Pasien', 'L', '1985-05-15', '081234567890', 'Jl. Contoh No. 1', 'Tidak ada'],
         ];
         var ws = XLSX.utils.aoa_to_sheet(ws_data);
         ws['!cols'] = [{wch: 15}, {wch: 30}, {wch: 5}, {wch: 25}, {wch: 18}, {wch: 30}, {wch: 20}];
@@ -226,15 +259,17 @@ window.AppKlinikPasien = {
                     return;
                 }
 
-                AppKlinikPasien.importData = jsonData.map(row => ({
-                    nomor_rm: String(row['No. RM'] || '').trim(),
-                    nama: String(row['Nama Lengkap'] || '').trim(),
-                    jenis_kelamin: String(row['L/P'] || 'L').trim().toUpperCase().substring(0,1),
-                    tanggal_lahir: String(row['Tanggal Lahir (YYYY-MM-DD)'] || '').trim(),
-                    noTelepon: String(row['No. Telepon'] || '').trim(),
-                    alamat: String(row['Alamat'] || '').trim(),
-                    alergiObat: String(row['Alergi Obat'] || '').trim()
-                })).filter(row => row.nomor_rm !== '' && row.nama !== '');
+                AppKlinikPasien.importData = jsonData.map(function(row) {
+                    return {
+                        nomor_rm: String(row['No. RM'] || '').trim(),
+                        nama: String(row['Nama Lengkap'] || '').trim(),
+                        jenis_kelamin: String(row['L/P'] || 'L').trim().toUpperCase().substring(0,1),
+                        tanggal_lahir: String(row['Tanggal Lahir (YYYY-MM-DD)'] || '').trim(),
+                        telepon: String(row['No. Telepon'] || '').trim(), // FIX mapping
+                        alamat: String(row['Alamat'] || '').trim(),
+                        alergi_obat: String(row['Alergi Obat'] || '').trim() // FIX mapping
+                    };
+                }).filter(function(row) { return row.nomor_rm !== '' && row.nama !== ''; });
 
                 AppKlinikPasien.renderImportPreview();
             } catch (err) {
@@ -268,8 +303,8 @@ window.AppKlinikPasien = {
             html += '<td class="px-2 py-1 font-mono">' + Utils.escapeHtml(p.nomor_rm) + '</td>';
             html += '<td class="px-2 py-1 font-medium">' + Utils.escapeHtml(p.nama) + '</td>';
             html += '<td class="px-2 py-1">' + Utils.escapeHtml(p.jenis_kelamin) + '</td>';
-            html += '<td class="px-2 py-1">' + Utils.escapeHtml(p.noTelepon) + '</td>';
-            html += '<td class="px-2 py-1 text-red-500">' + Utils.escapeHtml(p.alergiObat || '-') + '</td>';
+            html += '<td class="px-2 py-1">' + Utils.escapeHtml(p.telepon) + '</td>';
+            html += '<td class="px-2 py-1 text-red-500">' + Utils.escapeHtml(p.alergi_obat || '-') + '</td>';
             html += '</tr>';
         }
         
@@ -285,46 +320,54 @@ window.AppKlinikPasien = {
 
         area.innerHTML = html;
         area.classList.remove('hidden');
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     },
 
     executeImport: function() {
-        if (!confirm('Import ' + this.importData.length + ' data pasien ke database?')) return;
+        var self = this;
+        
+        Utils.openModal(
+            '<div class="p-6 text-center">' +
+            '<i data-lucide="upload" class="w-12 h-12 text-emerald-400 mx-auto mb-3"></i>' +
+            '<h3 class="text-lg font-bold text-slate-800 dark:text-white mb-2">Konfirmasi Import</h3>' +
+            '<p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Import <strong>' + self.importData.length + '</strong> data pasien ke database?<br>Jika No. RM sudah ada, data akan diperbarui.</p>' +
+            '<div class="flex gap-3 justify-center">' +
+            '<button onclick="Utils.closeModal()" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm hover:bg-slate-100 dark:hover:bg-slate-700">Batal</button>' +
+            '<button onclick="AppKlinikPasien._doImport()" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700">Ya, Import Sekarang</button>' +
+            '</div></div>'
+        );
+    },
 
-        var dataToImport = this.importData;
-        var batchSize = 400;
+    _doImport: function() {
+        Utils.closeModal();
+        var dataToImport = AppKlinikPasien.importData;
+
+        Utils.toast('Sedang memproses import...', 'info');
+        
+        // FIX TOTAL: Hapus db.batch() Firebase. 
+        // Supabase memiliki fitur Upsert bawaan yang jauh lebih cepat.
+        // Karena ada UNIQUE constraint di kolom nomor_rm, jika nomor RM sudah ada, akan di-update otomatis.
+        
+        var batchSize = 400; // Supabase aman sampai 500 row per request
         var batches = [];
         
         for (var i = 0; i < dataToImport.length; i += batchSize) {
             var chunk = dataToImport.slice(i, i + batchSize);
-            var batch = db.batch();
-            chunk.forEach(pasien => {
-                // FIX: pakai auto-ID untuk dokumen pasien supaya karakter aneh ('/', '.', dst)
-                //      di nomor_rm tidak membuat path Firestore invalid. nomor_rm tetap disimpan sbg field.
-                var safeRM = (pasien.nomor_rm || '').replace(/[\/\.#\$\[\]]/g, '_');
-                var docRef = safeRM ? window.sb.from('pasien').doc(safeRM) : window.sb.from('pasien').doc();
-                batch.set(docRef, {
-                    nomor_rm: pasien.nomor_rm,
-                    nama: pasien.nama,
-                    jenis_kelamin: pasien.jenis_kelamin,
-                    tanggal_lahir: pasien.tanggal_lahir,
-                    noTelepon: pasien.noTelepon,
-                    alamat: pasien.alamat,
-                    alergiObat: pasien.alergiObat,
-                    updatedAt: new Date().toISOString(),
-                    createdAt: new Date().toISOString()
-                }, { merge: true }); 
-            });
-            batches.push(batch.commit());
+            batches.push(window.sb.from('pasien').upsert(chunk, { onConflict: 'nomor_rm' }));
         }
 
-        Utils.toast('Sedang memproses...', 'info');
-        Promise.all(batches).then(() => {
+        Promise.all(batches).then(function(results) {
+            var errorCount = 0;
+            results.forEach(function(res) { if (res.error) errorCount++; });
+
+            if (errorCount > 0) throw new Error('Beberapa batch gagal diproses');
+            
             Utils.toast('Berhasil mengimport ' + dataToImport.length + ' data pasien!', 'success');
             document.getElementById('import-preview-area').classList.add('hidden');
             AppKlinikPasien.init();
-        }).catch(err => {
-            Utils.toast('Gagal mengimport: ' + err.message, 'error');
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal mengimport: ' + err.message, 'error'); 
         });
     }
 };
