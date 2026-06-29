@@ -303,8 +303,10 @@ window.navigateTo = function (modulePath, title) {
     var scriptUrl = 'js/' + modulePath + '.js';
     loadScript(scriptUrl).then(function () {
         // Konversi path ke nama module: klinik/antrian → AppKlinikAntrian
-        var moduleName = 'App' + modulePath.split('/')
-            .map(function (s) { return s.charAt(0).toUpperCase() + s.slice(1); }).join('');
+        // FIX: Regex yang lebih pintar untuk mengubah snake_case & camelCase menjadi PascalCase
+// 'rekam_medis' -> 'RekamMedis', 'stockOpname' -> 'StockOpname'
+var moduleName = 'App' + modulePath.split('/')
+    .map(function (s) { return s.replace(/(^|_)(\w)/g, function(g, p1, p2) { return p2.toUpperCase(); }); }).join('');
 
         var Module = window[moduleName];
         if (!Module || typeof Module.render !== 'function') {
