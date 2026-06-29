@@ -116,11 +116,15 @@ window.App = {
         );
     },
     _doLogout: function () {
-        Utils.closeModal();
-        window.sb.auth.signOut()
-            .then(function () { Utils.toast('Berhasil logout.', 'success'); })
-            .catch(function (e) { Utils.toast('Gagal logout: ' + e.message, 'error'); });
-    }
+    Utils.closeModal();
+    
+    // Hapus semua koneksi realtime sebelum logout
+    window.sb.removeAllChannels();
+    
+    window.sb.auth.signOut()
+        .then(function () { Utils.toast('Berhasil logout.', 'success'); })
+        .catch(function (e) { Utils.toast('Gagal logout: ' + e.message, 'error'); });
+}
 };
 
 // ============================================================
@@ -339,34 +343,59 @@ window.navigateTo = function (modulePath, title) {
 function startApp(userRole, userName) {
     window.currentRole     = userRole;
     window.currentUserName = userName;
-
     var nameSafe = (userName || 'User').toString().trim() || 'User';
     var roleSafe = (userRole  || 'user').toString().trim() || 'user';
-
     var elName   = document.getElementById('user-name');
     var elRole   = document.getElementById('user-role');
     var elAvatar = document.getElementById('user-avatar');
     if (elName)   elName.textContent   = nameSafe;
     if (elRole)   elRole.textContent   = roleSafe.charAt(0).toUpperCase() + roleSafe.slice(1);
     if (elAvatar) elAvatar.textContent = (nameSafe.charAt(0) || '?').toUpperCase();
-
     renderSidebar(userRole);
     navigateTo('dashboard', 'Dashboard');
+    
+    // 👉 TAMBAHKAN BARIS INI DI SINI:
+    window.startRealtimeListener(); 
 }
 
 // ============================================================
-// 9. AUTH STATE LISTENER — VERSI SUPABASE
+// 9. REALTIME LISTENER (Auto-Refresh halaman yang sedang aktif)
+// 👉 TARUH KODE REALTIME YANG BARU DI SINI
+// ============================================================
+window.startRealtimeListener = function () {
+    var tablesToWatch = ['antrian', 'transaksi', 'rekam_medis', 'karyawan', 'obat', 'pasien'];
+    
+    tablesToWatch.forEach(function (tableName) {
+        window.sb.channel('public:' + tableName)
+            .on('postgres_changes', {
+                event: '*',       
+                schema: 'public',
+                table: tableName
+            }, function (payload) {
+                console.log('[Realtime] Perubahan di tabel:', tableName, payload.eventType);
+                
+                if (window._currentModule && typeof window._currentModule.init === 'function') {
+                    // Debounce 500ms agar tidak fetch berulang-ulang
+                    clearTimeout(window._realtimeTimeout);
+                    window._realtimeTimeout = setTimeout(function () {
+                        window._currentModule.init();
+                    }, 500);
+                }
+            })
+            .subscribe();
+    });
+};
+
+// ============================================================
+// 10. AUTH STATE LISTENER — VERSI SUPABASE
 // ============================================================
 window.sb.auth.onAuthStateChange(function (event, session) {
     if (session && session.user) {
-        // Hapus overlay login jika ada
         var overlay = document.getElementById('login-overlay');
         if (overlay) overlay.remove();
 
-        // Simpan user_id global
         window.currentUserId = session.user.id;
 
-        // Ambil profil dari tabel public.users
         window.sb.from('users').select('*').eq('id', session.user.id).single()
             .then(function (result) {
                 if (result.error || !result.data) {
@@ -377,14 +406,12 @@ window.sb.auth.onAuthStateChange(function (event, session) {
 
                 var data = result.data;
 
-                // Cek akun nonaktif
                 if (data.status === 'nonaktif') {
                     Utils.toast('Akun Anda dinonaktifkan. Hubungi Admin.', 'error');
                     window.sb.auth.signOut();
                     return;
                 }
 
-                // ✅ FIX #3 — validasi role, jangan fallback ke apotek
                 var role = data.role;
                 if (!role || !roleAccess[role]) {
                     Utils.toast('Role akun tidak valid. Hubungi Admin.', 'error');
@@ -401,7 +428,9 @@ window.sb.auth.onAuthStateChange(function (event, session) {
             });
 
     } else {
-        // Reset UI navbar
+        // 👉 JANGAN LUPA TAMBAHKAN INI SAAT LOGOUT (Memutus koneksi Realtime)
+        window.sb.removeAllChannels();
+
         var elName   = document.getElementById('user-name');
         var elRole   = document.getElementById('user-role');
         var elAvatar = document.getElementById('user-avatar');
@@ -412,7 +441,6 @@ window.sb.auth.onAuthStateChange(function (event, session) {
         window.currentRole    = null;
         window.currentUserName = null;
 
-        // ✅ FIX #5 — batasi maksimal percobaan, jangan loop forever
         function showLogin(attempts) {
             attempts = attempts || 0;
             if (window.AppAuth && typeof window.AppAuth.renderLogin === 'function') {
