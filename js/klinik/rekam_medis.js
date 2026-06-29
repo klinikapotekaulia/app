@@ -229,3 +229,6 @@ window.AppKlinikRekamMedis = {
         });
     }
 };
+
+// FALLBACK: Alias nama objek jika app.js belum diperbaiki
+window.AppKlinikRekam_medis = window.AppKlinikRekamMedis;
