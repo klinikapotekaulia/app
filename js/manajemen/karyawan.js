@@ -1,12 +1,17 @@
 /**
- * js/manajemen/karyawan.js
+ * js/manajemen/karyawan.js — VERSI SUPABASE FIX
  * CRUD Data Karyawan (Dokter, Apoteker, Perawat, dll)
- * FIX: Integrasi dengan Akun Login (users) & Role Access Matrix
  */
 
 window.AppManajemenKaryawan = {
     data: [],
-    usersList: [], // Untuk menyimpan daftar akun yang belum terhubung ke karyawan
+    usersList: [],
+
+    // Wajib ada untuk cleanup module (app.js)
+    destroy: function() {
+        this.data = [];
+        this.usersList = [];
+    },
 
     render: function() {
         var role = window.currentRole || 'apotek';
@@ -29,18 +34,20 @@ window.AppManajemenKaryawan = {
 
     init: function() {
         var self = this;
-        var pKaryawan = window.sb.from('karyawan').order('nama', { ascending: true }).get();
-        var pUsers = window.sb.from('users').get();
+        
+        // FIX: Gunakan .select('*') dan hapus .get() (bukan syntax Supabase)
+        var pKaryawan = window.sb.from('karyawan').select('*').order('nama', { ascending: true });
+        var pUsers = window.sb.from('users').select('*');
 
         Promise.all([pKaryawan, pUsers]).then(function(results) {
-            self.data = [];
-            results[0].forEach(function(doc) { var d = doc; d.id = doc.id; self.data.push(d); });
-
-            self.usersList = [];
-            results[1].forEach(function(doc) { var d = doc; d.id = doc.id; self.usersList.push(d); });
-
+            // FIX: Supabase mengembalikan objek { data: [], error: null }
+            self.data = results[0].data || [];
+            self.usersList = results[1].data || [];
             self.renderList();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) {
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error');
+        });
     },
 
     renderList: function() {
@@ -67,14 +74,19 @@ window.AppManajemenKaryawan = {
         if (canEdit) html += '<th class="px-4 py-3 text-right">Aksi</th>';
         html += '</tr></thead><tbody>';
 
-        this.data.forEach(k => {
+        var self = this;
+        this.data.forEach(function(k) {
             var deptColor = k.departemen === 'Klinik' ? 'purple' : (k.departemen === 'Apotek' ? 'teal' : 'slate');
             var statusBadge = k.status === 'aktif' ? 
                 '<span class="text-xs bg-green-50 dark:bg-green-900/30 text-green-600 px-2 py-0.5 rounded-full">Aktif</span>' : 
                 '<span class="text-xs bg-red-50 dark:bg-red-900/30 text-red-500 px-2 py-0.5 rounded-full">Nonaktif</span>';
             
+            // Cari data user terkait untuk menampilkan email
+            var linkedUser = k.user_id ? self.usersList.find(function(u){ return u.id === k.user_id; }) : null;
+            var akunInfo = linkedUser ? '<span class="text-xs text-blue-600">' + Utils.escapeHtml(linkedUser.email) + '</span>' : '<span class="text-xs text-slate-400 italic">Belum ada akun</span>';
+
+            // Escape nama untuk dipakai di attribute onclick
             var safeName = (k.nama || '-').replace(/'/g, "\\'");
-            var akunInfo = k.email ? '<span class="text-xs text-blue-600">' + Utils.escapeHtml(k.email) + '</span>' : '<span class="text-xs text-slate-400 italic">Belum ada akun</span>';
 
             html += '<tr class="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">';
             html += '<td class="px-4 py-3 font-medium text-gray-800 dark:text-white">' + Utils.escapeHtml(k.nama) + '</td>';
@@ -94,12 +106,12 @@ window.AppManajemenKaryawan = {
 
         html += '</tbody></table></div></div>';
         container.innerHTML = html;
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     },
 
     openForm: function(id) {
         var isEdit = !!id;
-        var k = isEdit ? this.data.find(x => x.id === id) : {};
+        var k = isEdit ? this.data.find(function(x) { return x.id === id; }) : {};
         
         // Cari akun user yang BELUM punya karyawan_id, ditambah akun user dari karyawan ini (jika edit)
         var availableUsers = this.usersList.filter(function(u) {
@@ -116,9 +128,9 @@ window.AppManajemenKaryawan = {
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Jabatan</label><input type="text" id="fk-jabatan" value="' + Utils.escapeHtml(k.jabatan || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" placeholder="Dokter, Apoteker, Kasir..."></div>';
         html += '</div>';
 
-        // TAMBAHAN: Link ke Akun Login
+        // Link ke Akun Login
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Akun Login (Opsional)</label><select id="fk-userid" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"><option value="">-- Tidak Pakai Akun --</option>';
-        availableUsers.forEach(u => {
+        availableUsers.forEach(function(u) {
             var sel = (u.id === k.user_id) ? ' selected' : '';
             html += '<option value="' + u.id + '" data-email="' + Utils.escapeHtml(u.email) + '"' + sel + '>' + Utils.escapeHtml(u.email) + ' (' + Utils.escapeHtml(u.role) + ')</option>';
         });
@@ -135,15 +147,21 @@ window.AppManajemenKaryawan = {
         html += '</div>';
         
         if (isEdit) html += '<input type="hidden" id="fk-id" value="' + k.id + '">';
+        // Simpan user_id lama untuk keperluan unlink saat ganti akun
+        if (isEdit && k.user_id) html += '<input type="hidden" id="fk-old-userid" value="' + k.user_id + '">';
+        
         html += '</form></div>';
 
         Utils.openModal(html);
         
-        setTimeout(() => {
-            document.getElementById('form-karyawan').addEventListener('submit', function(e) {
-                e.preventDefault();
-                AppManajemenKaryawan.simpan();
-            });
+        setTimeout(function() {
+            var form = document.getElementById('form-karyawan');
+            if(form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    AppManajemenKaryawan.simpan();
+                });
+            }
         }, 100);
     },
 
@@ -152,8 +170,8 @@ window.AppManajemenKaryawan = {
         var isEdit = !!idField;
         
         var userSelect = document.getElementById('fk-userid');
-        var user_id = userSelect.value;
-        var email = userSelect.value ? userSelect.options[userSelect.selectedIndex].getAttribute('data-email') : '';
+        var user_id = userSelect ? userSelect.value : null;
+        var email = (user_id && userSelect.selectedIndex > 0) ? userSelect.options[userSelect.selectedIndex].getAttribute('data-email') : null;
 
         var obj = {
             nama: document.getElementById('fk-nama').value.trim(),
@@ -162,8 +180,7 @@ window.AppManajemenKaryawan = {
             nip: document.getElementById('fk-nip').value.trim(),
             status: document.getElementById('fk-status').value,
             user_id: user_id || null,
-            email: email || null,
-            updatedAt: new Date().toISOString()
+            email: email // Sinkronisasi email ke tabel karyawan
         };
 
         if (!obj.nama || !obj.departemen) {
@@ -173,31 +190,79 @@ window.AppManajemenKaryawan = {
 
         Utils.toast('Menyimpan...', 'info');
         var p;
+        
         if (isEdit) {
-            p = window.sb.from('karyawan').update(obj);
+            // FIX: Supabase butuh .eq('id', id) untuk update
+            p = window.sb.from('karyawan').update(obj).eq('id', idField.value);
         } else {
-            obj.createdAt = new Date().toISOString();
+            // FIX: Hapus obj.createdAt, biarkan DB trigger yang handle
             p = window.sb.from('karyawan').insert(obj);
         }
 
-        p.then((docRef) => {
-            // FIX: untuk karyawan BARU, docRef.id adalah ID dokumen baru. Sebelumnya selalu null.
-            var karyawanIdFinal = isEdit ? idField.value : (docRef && docRef.id ? docRef.id : null);
+        p.then(function(res) {
+            if (res.error) throw res.error;
+
+            // FIX: Cara ambil ID di Supabase v2
+            var karyawanIdFinal = isEdit ? idField.value : (res.data && res.data[0] ? res.data[0].id : null);
+            
+            var oldUserIdField = document.getElementById('fk-old-userid');
+            var oldUserId = oldUserIdField ? oldUserIdField.value : null;
+            
+            // Jika ada akun login yang dipilih/diubah
             if (user_id) {
-                var userRef = window.sb.from('users').doc(user_id);
-                userRef.update({ karyawan_id: karyawanIdFinal, nama: obj.nama });
+                window.sb.from('users').update({ 
+                    karyawan_id: karyawanIdFinal, 
+                    nama: obj.nama 
+                }).eq('id', user_id).then(function(){});
+                
+                // Jika akun login DIGANTI, hapus karyawan_id di akun lama
+                if (isEdit && oldUserId && oldUserId !== user_id) {
+                    window.sb.from('users').update({ karyawan_id: null }).eq('id', oldUserId).then(function(){});
+                }
+            } 
+            // Jika akun login DILEPAS (dikosongkan)
+            else if (isEdit && oldUserId) {
+                window.sb.from('users').update({ karyawan_id: null }).eq('id', oldUserId).then(function(){});
             }
+
             Utils.toast('Karyawan berhasil disimpan!', 'success');
             Utils.closeModal();
-            AppManajemenKaryawan.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+            AppManajemenKaryawan.init(); // Reload data
+        }).catch(function(err) {
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error');
+        });
     },
 
     hapus: function(id, nama) {
-        if (!confirm('Hapus karyawan "' + nama + '"?')) return;
-        window.sb.from('karyawan').delete().eq('id', id).then(() => {
+        // Ganti confirm() dengan Utils.openModal yang lebih cantik
+        Utils.openModal(
+            '<div class="p-6 text-center">' +
+            '<i data-lucide="alert-triangle" class="w-12 h-12 text-red-400 mx-auto mb-3"></i>' +
+            '<h3 class="text-lg font-bold text-slate-800 dark:text-white mb-2">Hapus Karyawan</h3>' +
+            '<p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Yakin ingin menghapus <strong>' + Utils.escapeHtml(nama) + '</strong>?</p>' +
+            '<div class="flex gap-3 justify-center">' +
+            '<button onclick="Utils.closeModal()" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm hover:bg-slate-100 dark:hover:bg-slate-700">Batal</button>' +
+            '<button onclick="AppManajemenKaryawan._doHapus(\'' + id + '\')" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700">Ya, Hapus</button>' +
+            '</div></div>'
+        );
+    },
+
+    _doHapus: function(id) {
+        Utils.closeModal();
+        // Hapus karyawan_id dari user yang terhubung sebelum menghapus karyawan
+        this.data.forEach(function(k) {
+            if (k.id === id && k.user_id) {
+                window.sb.from('users').update({ karyawan_id: null }).eq('id', k.user_id).then(function(){});
+            }
+        });
+
+        window.sb.from('karyawan').delete().eq('id', id).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Berhasil dihapus', 'success');
             AppManajemenKaryawan.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) {
+            Utils.toast('Gagal: ' + err.message, 'error');
+        });
     }
 };
