@@ -387,12 +387,12 @@ window.AppPengaturanPembagian = {
             if (res.error) throw res.error;
             
             // 2. Buat Snapshot History
-            return window.sb.from('pengaturan_pembagian_history').insert({
-                periode: 'Snapshot ' + new Date().toLocaleString('id-ID'),
-                dokter_nama: 'System Update',
-                totalJasa: 0,
-                detail: d
-            });
+        return window.sb.from('pengaturan_pembagian_history').insert({
+            periode: 'Snapshot ' + new Date().toLocaleString('id-ID'),
+            dokter_nama: 'System Update',
+            totaljasa: 0,
+            detail: d
+        });
         })
         .then(function(res) {
             if (res.error) throw res.error;
