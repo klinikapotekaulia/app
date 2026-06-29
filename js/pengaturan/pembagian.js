@@ -398,9 +398,11 @@ window.AppPengaturanPembagian = {
             if (res.error) throw res.error;
             Utils.toast('Berhasil disimpan! Data transaksi akan otomatis terupdate.', 'success');
         })
-        .catch(function(err) {
-            console.error(err);
-            Utils.toast('Gagal menyimpan: ' + err.message, 'error');
+       .catch(function(err) {
+            console.error("Detail Error Pembagian:", err);
+            // Jika error dari Supabase biasanya ada di err.message
+            var msg = err.message || JSON.stringify(err);
+            Utils.toast('Gagal menyimpan: ' + msg, 'error');
         });
     },
 
