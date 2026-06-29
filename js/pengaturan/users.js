@@ -36,16 +36,15 @@ window.AppPengaturanUsers = {
         return html;
     },
 
-    init: function() {
+        init: function() {
         // Keamanan tambahan: Cek role
         if (window.currentRole !== 'admin' && window.currentRole !== 'keuangan') {
             document.getElementById('user-list').innerHTML = '<div class="bg-red-50 text-red-600 p-4 rounded-lg">Akses Ditolak. Halaman ini khusus Admin/Keuangan.</div>';
             return;
         }
 
-        // FIX: Hapus .get(), gunakan .select('*')
+        // ✅ BENAR: Ada .select('*') sebelum .order()
         window.sb.from('users').select('*').order('nama', { ascending: true }).then(function(res) {
-            // FIX: Supabase menyimpan data di res.data
             AppPengaturanUsers.data = res.data || [];
             AppPengaturanUsers.renderList();
         }).catch(function(err) { 
