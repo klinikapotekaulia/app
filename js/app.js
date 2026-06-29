@@ -175,7 +175,7 @@ var roleAccess = {
     admin:    [
         'utama', 'klinik', 'apotek', 'laporan', 
         'manajemen.karyawan', 'manajemen.absensi', 
-        'pengaturan.profil', 'pengaturan.tindakan', 'pengaturan.users'
+        'pengaturan.profil', 'pengaturan.tindakan'
     ],
     
     // Keuangan (PSA): Akses penuh ke operasional (untuk input) + Keuangan + Pengaturan Khusus
