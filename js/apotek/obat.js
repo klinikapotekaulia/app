@@ -179,7 +179,7 @@ window.AppApotekObat = {
             hpp: parseFloat(document.getElementById('fo-hpp').value) || 0,
             harga_jual: parseFloat(document.getElementById('fo-jual').value) || 0,
             stok_minimum: parseFloat(document.getElementById('fo-min').value) || 0,
-            updatedAt: new Date().toISOString()
+            updated_at: new Date().toISOString()
         };
 
         if (!obj.nama_obat || obj.hpp <= 0 || obj.harga_jual <= 0) {
@@ -193,7 +193,7 @@ window.AppApotekObat = {
             p = window.sb.from('obat').update(obj).eq('id', idField.value);
         } else {
             obj.stok = parseFloat(document.getElementById('fo-stok').value) || 0;
-            obj.createdAt = new Date().toISOString();
+            obj.created_at = new Date().toISOString();
             p = window.sb.from('obat').insert(obj);
         }
 
@@ -337,8 +337,8 @@ window.AppApotekObat = {
                 stok: obat.stok,
                 stok_minimum: obat.stok_minimum,
                 expDate: obat.expDate,
-                updatedAt: new Date().toISOString(),
-                createdAt: new Date().toISOString()
+                updated_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
             };
         });
 
