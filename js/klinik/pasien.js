@@ -42,7 +42,7 @@ window.AppKlinikPasien = {
 
     init: function() {
         // FIX: Hapus .get(), gunakan .select('*')
-        window.sb.from('pasien').select('*').order('nama', { ascending: true }).then(function(res) {
+        window.sb.from('pasien').select('*').eq('status', 'aktif').order('nama', { ascending: true }).then(function(res) {
             // FIX: Supabase menyimpan data di res.data
             AppKlinikPasien.data = res.data || [];
             AppKlinikPasien.renderList();
@@ -353,6 +353,8 @@ window.AppKlinikPasien = {
         
         for (var i = 0; i < dataToImport.length; i += batchSize) {
             var chunk = dataToImport.slice(i, i + batchSize);
+            // Tambahkan status aktif pada data import agar jika ada data lama yang 'batal', otomatis hidup lagi saat di-import ulang
+            chunk.forEach(function(row) { row.status = 'aktif'; });
             batches.push(window.sb.from('pasien').upsert(chunk, { onConflict: 'nomor_rm' }));
         }
 
