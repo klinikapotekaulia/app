@@ -123,7 +123,7 @@ window.AppApotekStockOpname = {
         else { selisihEl.innerHTML = '0'; selisihEl.className = 'px-4 py-3 text-center text-slate-500'; }
     },
 
-    ajukanOpname: function() {
+        ajukanOpname: function() {
         var self = this;
         var itemsToSubmit = [];
 
@@ -143,9 +143,9 @@ window.AppApotekStockOpname = {
 
         Utils.toast('Mengirim pengajuan...', 'info');
         
+        // KITA HAPUS "status: 'PENDING'" UNTUK MENGETES APAKAH DATABASE PUNYA DEFAULT VALUE
         window.sb.from('stock_opname_requests').insert({
             tanggal: new Date().toISOString().split('T')[0],
-            status: 'PENDING', // DIUBAH KE HURUF KAPITAL
             items: itemsToSubmit, 
             catatan: 'Menunggu approval',
             user_id: window.currentUserId || null
@@ -158,7 +158,6 @@ window.AppApotekStockOpname = {
             Utils.toast('Gagal: ' + err.message, 'error'); 
         });
     },
-
     // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
