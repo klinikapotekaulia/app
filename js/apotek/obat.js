@@ -1,6 +1,6 @@
 /**
  * js/apotek/obat.js
- * Master Data Obat, Stock, & Import Excel — VERSI SUPABASE
+ * Master Data Obat, Stock, & Import Excel — VERSI SUPABASE (FIXED)
  */
 
 window.AppApotekObat = {
@@ -39,9 +39,6 @@ window.AppApotekObat = {
         return html;
     },
 
-    // ============================================================
-    // FIX #1: .get() → .select('*'), variable `data` → snap.data
-    // ============================================================
     init: function() {
         window.sb.from('obat').select('*').then(function(snap) {
             AppApotekObat.data = snap.data || [];
@@ -91,7 +88,7 @@ window.AppApotekObat = {
         list.forEach(function(o) {
             var safeName = (o.nama_obat || '-').replace(/'/g, "\\'");
             var stokClass = (o.stok <= (o.stok_minimum || 0)) ? 'text-red-600 font-bold' : 'text-slate-800 dark:text-white font-medium';
-            var expClass = o.expDate && new Date(o.expDate) < new Date() ? 'text-red-500' : 'text-slate-500 dark:text-slate-400';
+            var expClass = o.exp_date && new Date(o.exp_date) < new Date() ? 'text-red-500' : 'text-slate-500 dark:text-slate-400';
 
             html += '<tr class="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">';
             html += '<td class="px-3 py-3"><p class="font-medium text-gray-800 dark:text-white">' + Utils.escapeHtml(o.nama_obat) + '</p><p class="text-xs text-slate-400 font-mono">' + Utils.escapeHtml(o.kode_obat || '-') + '</p></td>';
@@ -99,7 +96,7 @@ window.AppApotekObat = {
             html += '<td class="px-3 py-3 text-right text-slate-500 text-xs">' + Utils.formatRupiah(o.hpp) + '</td>';
             html += '<td class="px-3 py-3 text-right text-slate-800 dark:text-slate-200 text-xs">' + Utils.formatRupiah(o.harga_jual) + '</td>';
             html += '<td class="px-3 py-3 text-center ' + stokClass + '">' + (o.stok || 0) + ' ' + Utils.escapeHtml(o.satuan || '') + '</td>';
-            html += '<td class="px-3 py-3 text-xs hidden lg:table-cell ' + expClass + '">' + Utils.escapeHtml(o.expDate || '-') + '</td>';
+            html += '<td class="px-3 py-3 text-xs hidden lg:table-cell ' + expClass + '">' + Utils.escapeHtml(o.exp_date || '-') + '</td>';
             html += '<td class="px-3 py-3 text-right space-x-1">';
             html += '<button onclick="AppApotekObat.openForm(\'' + o.id + '\')" class="p-1.5 text-slate-400 hover:text-primary-600 rounded" title="Edit"><i data-lucide="pencil" class="w-4 h-4"></i></button>';
             html += '<button onclick="AppApotekObat.hapus(\'' + o.id + '\', \'' + safeName + '\')" class="p-1.5 text-slate-400 hover:text-red-600 rounded" title="Hapus"><i data-lucide="trash-2" class="w-4 h-4"></i></button>';
@@ -129,7 +126,7 @@ window.AppApotekObat = {
         html += '<div class="grid grid-cols-3 gap-4">';
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Kategori</label><input type="text" id="fo-kat" value="' + Utils.escapeHtml(o.kategori || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" placeholder="Tablet, Sirup"></div>';
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Satuan</label><input type="text" id="fo-satuan" value="' + Utils.escapeHtml(o.satuan || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" placeholder="Strip, Botol"></div>';
-        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Exp Date</label><input type="date" id="fo-exp" value="' + (o.expDate || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
+        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Exp Date</label><input type="date" id="fo-exp" value="' + (o.exp_date || '') + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
         html += '</div>';
 
         html += '<div class="grid grid-cols-3 gap-4">';
@@ -163,9 +160,6 @@ window.AppApotekObat = {
         }, 100);
     },
 
-    // ============================================================
-    // FIX #2: .update(obj) → .update(obj).eq('id', idField.value)
-    // ============================================================
     simpan: function() {
         var idField = document.getElementById('fo-id');
         var isEdit = !!idField;
@@ -175,7 +169,7 @@ window.AppApotekObat = {
             kode_obat: document.getElementById('fo-kode').value.trim(),
             kategori: document.getElementById('fo-kat').value.trim(),
             satuan: document.getElementById('fo-satuan').value.trim(),
-            expDate: document.getElementById('fo-exp').value,
+            exp_date: document.getElementById('fo-exp').value,
             hpp: parseFloat(document.getElementById('fo-hpp').value) || 0,
             harga_jual: parseFloat(document.getElementById('fo-jual').value) || 0,
             stok_minimum: parseFloat(document.getElementById('fo-min').value) || 0,
@@ -189,7 +183,6 @@ window.AppApotekObat = {
 
         var p;
         if (isEdit) {
-            // FIX: Tambahkan .eq('id', ...) agar tidak update semua row
             p = window.sb.from('obat').update(obj).eq('id', idField.value);
         } else {
             obj.stok = parseFloat(document.getElementById('fo-stok').value) || 0;
@@ -263,7 +256,7 @@ window.AppApotekObat = {
                         harga_jual: parseFloat(row['Harga Jual (Rp)']) || 0,
                         stok: parseInt(row['Stok Awal']) || 0,
                         stok_minimum: parseInt(row['Stok Minimum']) || 0,
-                        expDate: String(row['Exp Date (YYYY-MM-DD)'] || '').trim()
+                        exp_date: String(row['Exp Date (YYYY-MM-DD)'] || '').trim()
                     };
                 }).filter(function(row) { return row.nama_obat !== '' && row.hpp > 0; });
 
@@ -319,10 +312,6 @@ window.AppApotekObat = {
         if (window.lucide) lucide.createIcons();
     },
 
-    // ============================================================
-    // FIX #3: HAPUS SEMUA KODE FIREBASE (db.batch, .doc, .set)
-    // Ganti dengan Supabase .insert() yang mendukung bulk array
-    // ============================================================
     executeImport: function() {
         if (!confirm('Import ' + this.importData.length + ' data obat ke database?')) return;
 
@@ -336,7 +325,7 @@ window.AppApotekObat = {
                 harga_jual: obat.harga_jual,
                 stok: obat.stok,
                 stok_minimum: obat.stok_minimum,
-                expDate: obat.expDate,
+                exp_date: obat.exp_date,
                 updated_at: new Date().toISOString(),
                 created_at: new Date().toISOString()
             };
@@ -344,7 +333,6 @@ window.AppApotekObat = {
 
         Utils.toast('Sedang memproses...', 'info');
 
-        // Supabase: cukup .insert(array) untuk bulk insert
         window.sb.from('obat').insert(dataToImport).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Berhasil mengimport ' + dataToImport.length + ' data obat!', 'success');
