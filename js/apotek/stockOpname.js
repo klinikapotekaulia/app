@@ -123,7 +123,7 @@ window.AppApotekStockOpname = {
         else { selisihEl.innerHTML = '0'; selisihEl.className = 'px-4 py-3 text-center text-slate-500'; }
     },
 
-        ajukanOpname: function() {
+    ajukanOpname: function() {
         var self = this;
         var itemsToSubmit = [];
 
@@ -143,7 +143,7 @@ window.AppApotekStockOpname = {
 
         Utils.toast('Mengirim pengajuan...', 'info');
         
-        // KITA HAPUS "status: 'PENDING'" UNTUK MENGETES APAKAH DATABASE PUNYA DEFAULT VALUE
+        // Tidak mengirim kolom 'status' karena di Database sudah ada Default Value-nya
         window.sb.from('stock_opname_requests').insert({
             tanggal: new Date().toISOString().split('T')[0],
             items: itemsToSubmit, 
@@ -159,14 +159,14 @@ window.AppApotekStockOpname = {
         });
     },
 
-        // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
+    // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        // HAPUS FILTER STATUS. Kita ambil semua data, lalu saring di JavaScript berdasarkan 'catatan'
+        // Ambil data terbaru, lalu saring di JS berdasarkan catatan (agar aman dari constraint status)
         window.sb.from('stock_opname_requests').select('*, users(nama)').order('created_at', { ascending: false }).limit(50).then(function(snap) {
             var allRequests = snap.data || [];
             
-            // Saring: Hanya tampilkan yang catatannya MASIH "Menunggu approval" (Belum diproses Admin)
+            // Hanya tampilkan yang catatannya MASIH "Menunggu approval"
             self.requests = allRequests.filter(function(req) {
                 return req.catatan === 'Menunggu approval';
             });
@@ -274,7 +274,7 @@ window.AppApotekStockOpname = {
             var hasError = results.some(function(r) { return r.error; });
             if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
 
-            // AMAN: JANGAN UPDATE KOLOM 'status'. Cukup ubah 'catatan' agar hilang dari daftar pending
+            // Update catatan agar hilang dari daftar pending (Aman dari constraint status)
             return window.sb.from('stock_opname_requests').update({ 
                 catatan: 'Disetujui oleh ' + (window.currentUserName || 'Admin'),
                 updated_at: new Date().toISOString()
@@ -294,7 +294,7 @@ window.AppApotekStockOpname = {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
-        // AMAN: JANGAN UPDATE KOLOM 'status'. Cukup ubah 'catatan' agar hilang dari daftar pending
+        // Update catatan agar hilang dari daftar pending (Aman dari constraint status)
         window.sb.from('stock_opname_requests').update({ 
             catatan: 'Ditolak oleh ' + (window.currentUserName || 'Admin'),
             updated_at: new Date().toISOString()
@@ -307,3 +307,4 @@ window.AppApotekStockOpname = {
             Utils.toast('Gagal: ' + err.message, 'error'); 
         });
     }
+}; // <--- INI PENUTUP OBJEK YANG SEBELUMNYA HILANG
