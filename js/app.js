@@ -270,12 +270,12 @@ window.navigateTo = function (modulePath, title) {
     if (_currentModule && typeof _currentModule.destroy === 'function') {
         try { _currentModule.destroy(); } catch (e) { console.warn('Cleanup error:', e); }
     }
-    _currentModule = null;
-    sessionStorage.setItem('lastModule', modulePath);
-    sessionStorage.setItem('lastTitle', title || '');
 
     // Update judul halaman
     document.getElementById('page-title').textContent = title || '';
+    // FIX: Simpan state halaman agar saat refresh tidak kembali ke dashboard
+    localStorage.setItem('lastModule', modulePath);
+    localStorage.setItem('lastTitle', title || '');
 
     // Tampilkan loading
     document.getElementById('app-content').innerHTML =
@@ -358,19 +358,17 @@ function startApp(userRole, userName) {
     if (elRole)   elRole.textContent   = roleSafe.charAt(0).toUpperCase() + roleSafe.slice(1);
     if (elAvatar) elAvatar.textContent = (nameSafe.charAt(0) || '?').toUpperCase();
     renderSidebar(userRole);
-
-    var savedModule = sessionStorage.getItem('lastModule');
-    var savedTitle = sessionStorage.getItem('lastTitle');
-    if (savedModule && savedModule !== 'dashboard') {
-        navigateTo(savedModule, savedTitle);
-        sessionStorage.removeItem('lastModule'); // Hapus supaya normal lagi
+    // FIX: Buka halaman terakhir yang disimpan, BUKAN selalu dashboard
+    var lastModule = localStorage.getItem('lastModule');
+    var lastTitle = localStorage.getItem('lastTitle');
+    if (lastModule && lastModule !== 'dashboard') {
+        navigateTo(lastModule, lastTitle || 'Memuat...');
     } else {
         navigateTo('dashboard', 'Dashboard');
     }
     
-    // 👉 TAMBAHKAN BARIS INI DI SINI:
-    window.startRealtimeListener(); 
-}
+    window.startRealtimeListener();
+
 
 // ============================================================
 // 9. REALTIME LISTENER (Auto-Refresh halaman yang sedang aktif)
@@ -388,12 +386,19 @@ window.startRealtimeListener = function () {
             }, function (payload) {
                 console.log('[Realtime] Perubahan di tabel:', tableName, payload.eventType);
                 
+                // JANGAN refresh jika user sedang mengetik di input/select/textarea
+                var activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                if (activeTag === 'input' || activeTag === 'select' || activeTag === 'textarea') {
+                    console.log('[Realtime] Dibatalkan, user sedang mengetik...');
+                    return; 
+                }
+                
                 if (window._currentModule && typeof window._currentModule.init === 'function') {
-                    // Debounce 500ms agar tidak fetch berulang-ulang
+                    // Debounce 1 detik agar tidak fetch berulang-ulang
                     clearTimeout(window._realtimeTimeout);
                     window._realtimeTimeout = setTimeout(function () {
                         window._currentModule.init();
-                    }, 500);
+                    }, 1000);
                 }
             })
             .subscribe();
