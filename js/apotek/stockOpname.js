@@ -143,10 +143,9 @@ window.AppApotekStockOpname = {
 
         Utils.toast('Mengirim pengajuan...', 'info');
         
-        // SESUAIKAN DENGAN KOLOM DB: tanggal, status, items (JSONB), catatan, user_id
         window.sb.from('stock_opname_requests').insert({
             tanggal: new Date().toISOString().split('T')[0],
-            status: 'pending',
+            status: 'PENDING', // DIUBAH KE HURUF KAPITAL
             items: itemsToSubmit, 
             catatan: 'Menunggu approval',
             user_id: window.currentUserId || null
@@ -163,7 +162,8 @@ window.AppApotekStockOpname = {
     // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        window.sb.from('stock_opname_requests').select('*, users(nama)').eq('status', 'pending').order('created_at', { ascending: false }).then(function(snap) {
+        // DIUBAH KE HURUF KAPITAL
+        window.sb.from('stock_opname_requests').select('*, users(nama)').eq('status', 'PENDING').order('created_at', { ascending: false }).then(function(snap) {
             self.requests = snap.data || [];
             self.renderApprovalList();
         }).catch(function(err) { 
@@ -183,8 +183,6 @@ window.AppApotekStockOpname = {
         this.requests.forEach(function(req) {
             var tgl = req.created_at ? new Date(req.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
             var totalRugi = 0, totalUntung = 0;
-            
-            // BACA DATA DARI JSONB 'items'
             var reqItems = Array.isArray(req.items) ? req.items : [];
             reqItems.forEach(function(it) {
                 if(it.selisih < 0) totalRugi += Math.abs(it.selisih);
@@ -251,7 +249,6 @@ window.AppApotekStockOpname = {
 
         var reqItems = Array.isArray(req.items) ? req.items : [];
 
-        // 1. Kumpulkan promise untuk update stok master obat
         var updateStokPromises = reqItems.map(function(it) {
             var delta = (typeof it.selisih === 'number') ? it.selisih : ((it.stok_fisik || 0) - (it.stok_sistem || 0));
             
@@ -267,14 +264,13 @@ window.AppApotekStockOpname = {
                 });
         });
 
-        // Jalankan semua update stok paralel
         Promise.all(updateStokPromises).then(function(results) {
             var hasError = results.some(function(r) { return r.error; });
             if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
 
-            // 2. Update status pengajuan jadi approved (SESUAI NAMA KOLOM DB: catatan)
+            // DIUBAH KE HURUF KAPITAL
             return window.sb.from('stock_opname_requests').update({ 
-                status: 'approved', 
+                status: 'APPROVED', 
                 catatan: 'Disetujui oleh ' + (window.currentUserName || 'Admin'),
                 updated_at: new Date().toISOString()
             }).eq('id', reqId);
@@ -293,9 +289,9 @@ window.AppApotekStockOpname = {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
-        // SESUAI NAMA KOLOM DB: catatan
+        // DIUBAH KE HURUF KAPITAL
         window.sb.from('stock_opname_requests').update({ 
-            status: 'rejected',
+            status: 'REJECTED',
             catatan: 'Ditolak oleh ' + (window.currentUserName || 'Admin'),
             updated_at: new Date().toISOString()
         }).eq('id', reqId).then(function(res) {
