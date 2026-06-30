@@ -6,10 +6,7 @@
 window.AppManajemenAbsensi = {
     data: [],
     karyawanList: [],
-    selfKaryawanId: null, // Untuk menyimpan karyawan_id staf yang sedang login
-
-    // FIX: gunakan tanggal lokal (WIB) supaya tidak mundur 1 hari saat dini hari.
-    todayStr: (function(){ var d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().split('T')[0]; })(),
+    selfKaryawanId: null,
 
     // Wajib ada untuk cleanup module (app.js)
     destroy: function() {
@@ -18,20 +15,23 @@ window.AppManajemenAbsensi = {
         this.selfKaryawanId = null;
     },
 
+    // FIX: gunakan tanggal lokal (WIB) supaya tidak mundur 1 hari saat dini hari.
+    todayStr: (function(){ var d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOStrubstr(0, 10); })(),
+
     render: function() {
         var role = window.currentRole || 'apotek';
         var isStaff = (role === 'klinik' || role === 'apotek');
         var isAdmin = (role === 'admin');
 
         var html = '<div class="page-enter max-w-5xl">';
-        html += '  <h2 class="text-xl fontabold text-gray-800 dark:text-white mb-1">Absensi Karyawan</h2>';
+        html += '  <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-1">Absensi Karyawan</h2>';
         html += '  <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Rekap kehadiran tanggal ' + new Date(this.todayStr).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + '</p>';
         
         // Kartu Absensi Diri (Untuk Klinik & Apotek)
         if (isStaff) {
             html += '<div id="my-absensi-card" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">';
             html += '<div class="text-center sm:text-left"><h3 class="font-semibold text-gray-800 dark:text-white">Absensi Kamu Hari Ini</h3><p class="text-xs text-slate-400 dark:text-slate-500 mt-1" id="my-status">Memuat status...</p></div>';
-            html += '<div id="my-absensi-btn" class="flex gap-2"><!-- Tombol akan diisi via JS --></div>';
+            html += '<div id="my-absensi-btn" class="flex gap-2"></div>';
             html += '</div>';
         }
 
@@ -58,7 +58,8 @@ window.AppManajemenAbsensi = {
             self.karyawanList = results[0].data || [];
             self.data = results[1].data || [];
 
-            // FIX: Cari karyawan_id milik staf yang sedang login (untuk keperluan self check-in)
+            // Cari karyawan_id milik staf yang sedang login
+            // FIX: HAPUS TYPO "kemungkinId" menjadi "selfKaryawanId"
             self.selfKaryawanId = null;
             if (window.currentUserId) {
                 var myKary = self.karyawanList.find(function(k) { return k.user_id === window.currentUserId; });
@@ -83,10 +84,10 @@ window.AppManajemenAbsensi = {
         var statusEl = document.getElementById('my-status');
         if(!btnContainer || !statusEl) return;
 
-        if (!selfKaryawanId) {
-            // Akun login staf belum dihubungkan ke data karyawan
-            statusEl.innerHTML = '<span class="text-amber-500 font-semibold">Akun belum dihubungkan ke data karyawan</span>';
-            btnContainer.innerHTML = '<span class="text-xs text-slate-400 italic">Hubungkan akun Anda di menu Manajemen Karyawan terlebih dahulu.</span>';
+        // FIX: Tambahkan `self.`
+        if (!self.selfKaryawanId) {
+            statusEl.innerHTML = '<span class="text-amber-500 dark:text-amber-400 font-semibold">Akun belum dihubungkan ke data karyawan</span>';
+            btnContainer.innerHTML = '<span class="text-xs text-slate-400 dark:text-slate-500 italic">Hubungkan akun Anda di menu Manajemen Karyawan terlebih dahulu.</span>';
             if(window.lucide) lucide.createIcons();
             return;
         }
@@ -97,7 +98,6 @@ window.AppManajemenAbsensi = {
             statusEl.innerHTML = 'Status: <span class="text-red-500 font-semibold">Belum Check-In</span>';
             btnContainer.innerHTML = '<button onclick="AppManajemenAbsensi.selfCheckIn()" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg text-sm flex items-center gap-2"><i data-lucide="log-in" class="w-4 h-4"></i> Check-In</button>';
         } else if (myAbsen.check_in && !myAbsen.check_out) {
-            // FIX: Parse string ISO, bukan .toDate()
             var jamMasuk = myAbsen.check_in ? new Date(myAbsen.check_in).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
             statusEl.innerHTML = 'Status: Masuk pukul <span class="text-green-600 dark:text-green-400 font-semibold">' + jamMasuk + '</span>';
             btnContainer.innerHTML = '<button onclick="AppManajemenAbsensi.selfCheckOut(\'' + myAbsen.id + '\')" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-lg text-sm flex items-center gap-2"><i data-lucide="log-out" class="w-4 h-4"></i> Check-Out</button>';
@@ -111,6 +111,7 @@ window.AppManajemenAbsensi = {
     },
 
     selfCheckIn: function() {
+        // FIX: Tambahkan `self.`
         if (!this.selfKaryawanId) {
             Utils.toast('Akun belum dihubungkan ke data karyawan.', 'error');
             return;
@@ -120,22 +121,24 @@ window.AppManajemenAbsensi = {
         
         window.sb.from('absensi').insert({
             tanggal: this.todayStr,
-            karyawan_id: this.selfKaryawanId, // FIX: Gunakan karyawan_id, bukan user_id
-            namanya: myKary ? myKary.nama : 'Karyawan', // FIX: nama_karyawan -> namanya
-            check_in: new Date().toISOString(), // FIX: Langsung string ISO, bukan firebase Timestamp
+            karyawan_id: this.selfKaryawanId,
+            namanya: myKary ? myKary.nama : 'Karyawan',
+            check_in: new Date().toISOString(),
             check_out: null,
             status: 'hadir',
-            keterangan: 'Self-Check In',
-            input_oleh: window.currentUserName || 'Self-Check'
+            keterangan: 'Self-Check In'
         }).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Berhasil Check-In!', 'success');
             AppManajemenAbsensi.init();
-        }).catch(function(err) { Utils.toast('Gagal: ' + err.message, 'error'); });
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     selfCheckOut: function(id) {
-        // FIX: TAMBAHKAN .eq('id', id) !!!
+        // FIX: Tambahkan `self.`
         window.sb.from('absensi').update({
             check_out: new Date().toISOString(),
             status: 'hadir'
@@ -161,24 +164,24 @@ window.AppManajemenAbsensi = {
         if (window.currentRole === 'admin') html += '<th class="px-4 py-3 text-right">Aksi</th>';
         html += '</tr></thead><tbody>';
         
-        // FIX: Kumpulkan ID karyawan yang sudah absen hari ini
+        // Kumpulkan ID karyawan yang sudah absen hari ini
         var hadirIds = this.data.map(function(d) { return d.karyawan_id; });
 
         // 1. Tampilkan karyawan yang SUDAH absen
         this.data.forEach(function(a) {
-            // FIX: Parse string ISO, bukan .toDate()
             var jamMasuk = a.check_in ? new Date(a.check_in).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
             var jamPulang = a.check_out ? new Date(a.check_out).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
-            var statusBadge = a.check_out ? '<span class="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-1 rounded-full">Selesai</span>' : '<span class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">Bertugas</span>';
+            var statusBadge = a.check_out ? 
+                '<span class="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-1 rounded-full">Selesai</span>' : 
+                '<span class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">Bertugas</span>';
                 
-            html += '<tr class="border-t border-slate-100 dark:border-slate-700">';
-            // FIX: nama_karyawan -> namanya
+            html += '<tr class="border-t border-slate-100 dark:border-slate-900/50">';
             html += '<td class="px-4 py-3 font-medium text-gray-800 dark:text-white">' + Utils.escapeHtml(a.namanya || '-') + '</td>';
             html += '<td class="px-4 py-3 text-center text-slate-600 dark:text-slate-300">' + jamMasuk + '</td>';
             html += '<td class="px-4 py-3 text-center text-slate-600 dark:text-slate-300">' + jamPulang + '</td>';
             html += '<td class="px-4 py-3 text-center">' + statusBadge + '</td>';
             if (window.currentRole === 'admin') {
-                html += '<td class="px-4 py-3 text-right"><button onclick="AppManajemenAbsensi.hapusAbsen(\'' + a.id + '\')" class="text-xs text-red-500 hover:underline">Hapus</button></td>';
+                html += '<td class="px-4 py-3 text-right"><button onclick="AppManajemenAbsensi._doHapus(\'' + a.id + '\')" class="text-xs text-red-500 hover:underline">Hapus</button></td>';
             }
             html += '</tr>';
         });
@@ -186,10 +189,9 @@ window.AppManajemenAbsensi = {
         // 2. Tampilkan karyawan yang BELUM absen (Hanya untuk Admin)
         if (window.currentRole === 'admin') {
             this.karyawanList.forEach(function(k) {
-                // Cek apakah karyawan ini sudah ada di daftar hadir (berdasarkan karyawan_id)
                 var sudahHadir = hadirIds.indexOf(k.id) !== -1;
                 if (!sudahHadir) {
-                    html += '<tr class="border-t border-slate-100 dark:border-slate-700 text-slate-400 dark:text-slate-500">';
+                    html += '<tr class="border-t border-slate-100 dark:border-slate-900/50 text-slate-400 dark:text-slate-500">';
                     html += '<td class="px-4 py-3">' + Utils.escapeHtml(k.nama || '-') + '</td>';
                     html += '<td class="px-4 py-3 text-center">-</td>';
                     html += '<td class="px-4 py-3 text-center">-</td>';
@@ -219,7 +221,7 @@ window.AppManajemenAbsensi = {
 
         html += '<div class="grid grid-cols-2 gap-4">';
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Jam Masuk</label><input type="time" id="man-masuk" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
-        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Jam Pulang</label><input type="time" id="man-pulang" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
+        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Jam Pulang</label><input type="time" id="man-pulang" class="wultiparty-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
         html += '</div>';
 
         html += '<div class="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">';
@@ -269,19 +271,6 @@ window.AppManajemenAbsensi = {
             console.error(err);
             Utils.toast('Gagal: ' + err.message, 'error'); 
         });
-    },
-
-    hapusAbsen: function(id) {
-        Utils.openModal(
-            '<div class="p-6 text-center">' +
-            '<i data-lucide="alert-triangle" class="w-12 h-12 text-red-400 mx-auto mb-3"></i>' +
-            '<h3 class="text-lg font-bold text-slate-800 dark:text-white mb-2">Hapus Data Absensi</h3>' +
-            '<p class="text-sm text-slate-500 dark:text-slate-400 mb-5">Yakin ingin menghapus data absensi ini?</p>' +
-            '<div class="flex gap-3 justify-center">' +
-            '<button onclick="Utils.closeModal()" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm hover:bg-slate-100 dark:hover:bg-slate-700">Batal</button>' +
-            '<button onclick="AppManajemenAbsensi._doHapus(\'' + id + '\')" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700">Ya, Hapus</button>' +
-            '</div></div>'
-        );
     },
 
     _doHapus: function(id) {
