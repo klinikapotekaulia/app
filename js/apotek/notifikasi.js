@@ -1,23 +1,6 @@
 /**
  * js/apotek/notifikasi.js
- * Notifikasi Stok Menipis & Obat Mendekati Kadaluarsa
- *
- * FITUR:
- * - Tampilkan daftar obat di bawah stok minimum
- * - Tampilkan obat yang kadaluarsa dalam 30/60/90 hari ke depan
- * - Ekspor laporan sebagai teks untuk dikirim ke supplier
- * - Badge jumlah alert di sidebar (dipanggil dari app.js)
- *
- * FIRESTORE COLLECTIONS YANG DIPAKAI:
- *   - obat  { nama_obat, kode_obat, stok, stok_minimum, satuan, tanggalKadaluarsa, hpp }
- *
- * CARA PASANG:
- *   1. Tambahkan file ini ke daftar cache sw.js (urlsToCache)
- *   2. Tambahkan menu di app.js → menuStructure.apotek:
- *        { id: 'notifikasi', label: 'Alert Stok', icon: 'bell', module: 'apotek/notifikasi' }
- *   3. Tambahkan akses role di auth.js sesuai kebutuhan
- *   4. (Opsional) Panggil AppApotekNotifikasi.loadBadge() di app.js setelah login
- *      untuk menampilkan badge merah di sidebar.
+ * Notifikasi Stok Menipis & Obat Mendekati Kadaluarsa — VERSI SUPABASE FIX
  */
 
 window.AppApotekNotifikasi = {
@@ -73,12 +56,9 @@ window.AppApotekNotifikasi = {
     // ===== INIT =====
     init: function() {
         var self = this;
-        window.sb.from('obat').get().then(function(snap) {
-            self.allObat = [];
-            (data || []).forEach(function(doc) {
-                var d = doc; d.id = doc.id;
-                self.allObat.push(d);
-            });
+        // FIX: Hapus .get(), ganti .select('*'), akses via snap.data
+        window.sb.from('obat').select('*').then(function(snap) {
+            self.allObat = snap.data || [];
             self.renderContent();
         }).catch(function(err) {
             document.getElementById('notif-content').innerHTML =
@@ -182,16 +162,16 @@ window.AppApotekNotifikasi = {
         var batasStr = batas.toISOString().split('T')[0];
         var nowStr   = now.toISOString().split('T')[0];
 
-        // Filter obat yang punya tanggalKadaluarsa dan <= batas, stok > 0
+        // FIX: Ganti tanggalKadaluarsa jadi exp_date (sesuai tabel obat & modul obat.js)
         var list = this.allObat.filter(function(o) {
-            return o.tanggalKadaluarsa && o.tanggalKadaluarsa <= batasStr && (o.stok || 0) > 0;
+            return o.exp_date && o.exp_date <= batasStr && (o.stok || 0) > 0;
         }).sort(function(a, b) {
-            return (a.tanggalKadaluarsa || '').localeCompare(b.tanggalKadaluarsa || '');
+            return (a.exp_date || '').localeCompare(b.exp_date || '');
         });
 
         // Juga ambil yang sudah kadaluarsa
         var sudahExp = this.allObat.filter(function(o) {
-            return o.tanggalKadaluarsa && o.tanggalKadaluarsa < nowStr && (o.stok || 0) > 0;
+            return o.exp_date && o.exp_date < nowStr && (o.stok || 0) > 0;
         });
 
         if (list.length === 0 && sudahExp.length === 0) {
@@ -228,7 +208,7 @@ window.AppApotekNotifikasi = {
         html += '</thead><tbody class="divide-y divide-slate-100 dark:divide-slate-700">';
 
         allList.forEach(function(o) {
-            var tgl = o.tanggalKadaluarsa;
+            var tgl = o.exp_date; // FIX: pakai exp_date
             var selisih = Math.ceil((new Date(tgl) - now) / (1000 * 60 * 60 * 24));
             var sudah   = selisih < 0;
             var kritis  = selisih >= 0 && selisih <= 14;
@@ -280,14 +260,15 @@ window.AppApotekNotifikasi = {
         var batas60 = new Date(); batas60.setDate(batas60.getDate() + 60);
         var batas60Str = batas60.toISOString().split('T')[0];
         var nowStr = now.toISOString().split('T')[0];
-        var expList = this.allObat.filter(function(o) { return o.tanggalKadaluarsa && o.tanggalKadaluarsa <= batas60Str && (o.stok || 0) > 0; });
+        // FIX: Ganti tanggalKadaluarsa jadi exp_date
+        var expList = this.allObat.filter(function(o) { return o.exp_date && o.exp_date <= batas60Str && (o.stok || 0) > 0; });
         lines.push('--- KADALUARSA DALAM 60 HARI (' + expList.length + ' item) ---');
         if (expList.length === 0) {
             lines.push('  (tidak ada)');
         } else {
             expList.forEach(function(o) {
-                var selisih = Math.ceil((new Date(o.tanggalKadaluarsa) - now) / (1000 * 60 * 60 * 24));
-                lines.push('  [' + (o.kode_obat || '-') + '] ' + o.nama_obat + ' — Exp: ' + o.tanggalKadaluarsa + ' (' + (selisih < 0 ? 'SUDAH LEWAT' : selisih + ' hari lagi') + ') Stok: ' + (o.stok || 0) + ' ' + (o.satuan || ''));
+                var selisih = Math.ceil((new Date(o.exp_date) - now) / (1000 * 60 * 60 * 24));
+                lines.push('  [' + (o.kode_obat || '-') + '] ' + o.nama_obat + ' — Exp: ' + o.exp_date + ' (' + (selisih < 0 ? 'SUDAH LEWAT' : selisih + ' hari lagi') + ') Stok: ' + (o.stok || 0) + ' ' + (o.satuan || ''));
             });
         }
 
@@ -304,14 +285,16 @@ window.AppApotekNotifikasi = {
     // ===== BADGE (dipanggil dari app.js setelah login) =====
     // Mengembalikan jumlah total alert untuk ditampilkan di sidebar
     loadBadge: function(callback) {
-        window.sb.from('obat').get().then(function(snap) {
+        // FIX: Hapus .get(), ganti .select('*'), akses via snap.data
+        window.sb.from('obat').select('*').then(function(snap) {
             var now = new Date();
             var batas30Str = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             var count = 0;
-            (data || []).forEach(function(doc) {
-                var d = doc;
+            var allData = snap.data || [];
+            allData.forEach(function(d) {
                 var stokAlert  = (d.stok || 0) <= (d.stok_minimum || 0);
-                var expAlert   = d.tanggalKadaluarsa && d.tanggalKadaluarsa <= batas30Str && (d.stok || 0) > 0;
+                // FIX: Ganti tanggalKadaluarsa jadi exp_date
+                var expAlert   = d.exp_date && d.exp_date <= batas30Str && (d.stok || 0) > 0;
                 if (stokAlert || expAlert) count++;
             });
             if (typeof callback === 'function') callback(count);
