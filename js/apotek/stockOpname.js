@@ -1,6 +1,6 @@
 /**
  * js/apotek/stockOpname.js
- * Sistem Stock Opname dengan Approval (Multi-Role)
+ * Sistem Stock Opname dengan Approval (Multi-Role) — VERSI SUPABASE FIX
  */
 
 window.AppApotekStockOpname = {
@@ -41,14 +41,18 @@ window.AppApotekStockOpname = {
     // ===== VIEW UNTUK APOTEKER (INPUT) =====
     loadMasterObat: function() {
         var self = this;
-        window.sb.from('obat').order('nama_obat', { ascending: true }).get().then(snap => {
-            self.data = [];
-            (data || []).forEach(doc => { 
-                var d = doc; d.id = doc.id; d.stok_fisik = ''; 
-                self.data.push(d); 
+        // FIX: Hapus .get(), tambah .select('*'), akses via snap.data
+        window.sb.from('obat').select('*').order('nama_obat', { ascending: true }).then(function(snap) {
+            self.data = snap.data || [];
+            // Supabase otomatis menyertakan 'id', kita hanya perlu tambahkan property stok_fisik
+            self.data.forEach(function(doc) { 
+                doc.stok_fisik = ''; 
             });
             self.renderInputForm();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error'); 
+        });
     },
 
     renderInputForm: function() {
@@ -64,7 +68,7 @@ window.AppApotekStockOpname = {
         html += '</tr></thead><tbody id="so-table-body"></tbody></table></div>';
 
         container.innerHTML = html;
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
         this.renderTableRows();
     },
 
@@ -73,14 +77,17 @@ window.AppApotekStockOpname = {
         if(!tbody) return;
         var list = this.data;
         if (this.searchQuery) {
-            list = list.filter(o => (o.nama_obat && o.nama_obat.toLowerCase().includes(this.searchQuery)) || (o.kode_obat && o.kode_obat.toLowerCase().includes(this.searchQuery)));
+            list = list.filter(function(o) { 
+                return (o.nama_obat && o.nama_obat.toLowerCase().includes(AppApotekStockOpname.searchQuery)) || 
+                       (o.kode_obat && o.kode_obat.toLowerCase().includes(AppApotekStockOpname.searchQuery)); 
+            });
         }
 
         if(list.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-slate-400">Obat tidak ditemukan.</td></tr>'; return; }
 
         var html = '';
-        list.forEach((o) => {
-            var realIdx = this.data.findIndex(x => x.id === o.id);
+        list.forEach(function(o) {
+            var realIdx = AppApotekStockOpname.data.findIndex(function(x) { return x.id === o.id; });
             var stok_sistem = o.stok || 0;
             var stok_fisik = o.stok_fisik === '' ? '' : parseInt(o.stok_fisik);
             var selisih = '-', selisihClass = 'text-slate-400';
@@ -147,7 +154,8 @@ window.AppApotekStockOpname = {
             totalItem: itemsToSubmit.length,
             items: itemsToSubmit,
             createdAt: new Date().toISOString()
-        }).then(function() {
+        }).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Pengajuan opname terkirim! Menunggu approval.', 'success');
             self.loadMasterObat(); // Reset form
         }).catch(function(err) { Utils.toast('Gagal: ' + err.message, 'error'); });
@@ -156,13 +164,18 @@ window.AppApotekStockOpname = {
     // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        // Tampilkan yang pending dulu
-        window.sb.from('stock_opname_requests').eq('status', 'pending').get().then(snap => {
-            self.requests = [];
-            (data || []).forEach(doc => { var d = doc; d.id = doc.id; self.requests.push(d); });
-            self.requests.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        // FIX: Hapus .get(), tambah .select('*'), akses via snap.data
+        window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').then(function(snap) {
+            self.requests = snap.data || [];
+            // FIX: Sorting tanggal ISO string (bukan Firebase Timestamp)
+            self.requests.sort(function(a, b) { 
+                return (b.createdAt || '').localeCompare(a.createdAt || ''); 
+            });
             self.renderApprovalList();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error'); 
+        });
     },
 
     renderApprovalList: function() {
@@ -174,7 +187,8 @@ window.AppApotekStockOpname = {
 
         var html = '<div class="space-y-4">';
         this.requests.forEach(function(req) {
-            var tgl = req.createdAt ? new Date(req.createdAt.seconds * 1000).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+            // FIX: Parsing ISO String (bukan .seconds seperti Firebase)
+            var tgl = req.createdAt ? new Date(req.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
             var totalRugi = 0, totalUntung = 0;
             req.items.forEach(function(it) {
                 if(it.selisih < 0) totalRugi += Math.abs(it.nilaiSelisih);
@@ -202,11 +216,11 @@ window.AppApotekStockOpname = {
         });
         html += '</div>';
         container.innerHTML = html;
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     },
 
     lihatDetail: function(reqId) {
-        var req = this.requests.find(r => r.id === reqId);
+        var req = this.requests.find(function(r) { return r.id === reqId; });
         if(!req) return;
 
         var html = '<div class="p-6">';
@@ -226,66 +240,90 @@ window.AppApotekStockOpname = {
 
         html += '</tbody></table></div></div>';
         Utils.openModal(html);
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     },
 
     approveReq: function(reqId) {
         var self = this;
-        var req = this.requests.find(r => r.id === reqId);
+        var req = this.requests.find(function(r) { return r.id === reqId; });
         if(!req) return;
 
         if(!confirm('Setujui pengajuan ini? Stok sistem akan otomatis diperbarui.')) return;
 
         Utils.toast('Memproses update stok...', 'info');
-        var batch = db.batch();
 
-        // 1. Update stok master obat — gunakan delta (increment selisih) supaya
-        //    transaksi/pembelian yg terjadi setelah pengajuan tidak ditimpa.
-        req.items.forEach(function(it) {
-            var ref = window.sb.from('obat').doc(it.obat_id);
+        // ==========================================
+        // FIX BESAR: HAPUS db.batch() FIREBASE
+        // Ganti dengan Promise.all loop khas Supabase
+        // ==========================================
+        
+        // 1. Kumpulkan promise untuk update stok master obat
+        var updateStokPromises = req.items.map(function(it) {
             var delta = (typeof it.selisih === 'number') ? it.selisih : ((it.stok_fisik || 0) - (it.stok_sistem || 0));
-            batch.update(ref, {
-                stok: /* TODO_INCREMENT(delta) */,
-                updatedAt: new Date().toISOString()
+            
+            // Ambil stok saat ini, lalu tambahkan delta (mencegah penimpaan jika ada transaksi setelah opname diajukan)
+            return window.sb.from('obat').select('stok').eq('id', it.obat_id).single()
+                .then(function(res) {
+                    var currentStok = res.data ? (res.data.stok || 0) : 0;
+                    var newStok = currentStok + delta;
+                    
+                    return window.sb.from('obat').update({ 
+                        stok: newStok, 
+                        updated_at: new Date().toISOString() 
+                    }).eq('id', it.obat_id);
+                });
+        });
+
+        // Jalankan semua update stok secara paralel
+        Promise.all(updateStokPromises).then(function(results) {
+            // Cek jika ada error di salah satu update
+            var hasError = results.some(function(r) { return r.error; });
+            if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
+
+            // 2. Update status pengajuan jadi approved
+            return window.sb.from('stock_opname_requests').update({ 
+                status: 'approved', 
+                approvedBy: window.currentUserName || 'Admin',
+                approvedAt: new Date().toISOString()
+            }).eq('id', reqId);
+        }).then(function(res) {
+            if (res.error) throw res.error;
+
+            // 3. Catat ke history (Hapus .doc(), langsung .insert)
+            return window.sb.from('stock_opname_history').insert({
+                tanggal: req.tanggal || (req.createdAt ? new Date(req.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+                totalItem: req.totalItem,
+                items: req.items,
+                approvedBy: window.currentUserName || 'Admin',
+                createdAt: new Date().toISOString()
             });
-        });
-
-        // 2. Update status pengajuan jadi approved
-        var reqRef = window.sb.from('stock_opname_requests').doc(reqId);
-        batch.update(reqRef, { 
-            status: 'approved', 
-            approvedBy: window.currentUserName || 'Admin',
-            approvedAt: new Date().toISOString()
-        });
-
-        // 3. Catat ke history
-        var histRef = window.sb.from('stock_opname_history').doc();
-        batch.set(histRef, {
-            tanggal: req.tanggal || (req.createdAt && req.createdAt.seconds ? new Date(req.createdAt.seconds*1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
-            totalItem: req.totalItem,
-            items: req.items,
-            approvedBy: window.currentUserName || 'Admin',
-            createdAt: new Date().toISOString()
-        });
-
-        batch.commit().then(function() {
+        }).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Pengajuan disetujui & stok diupdate!', 'success');
             Utils.closeModal();
             self.loadRequests();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     rejectReq: function(reqId) {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
+        // FIX: TAMBAHKAN .eq('id', reqId) SEBELUM .then()
         window.sb.from('stock_opname_requests').update({ 
             status: 'rejected',
             approvedBy: window.currentUserName || 'Admin',
             approvedAt: new Date().toISOString()
-        }).then(function() {
+        }).eq('id', reqId).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Pengajuan ditolak.', 'info');
             self.loadRequests();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     }
 };
