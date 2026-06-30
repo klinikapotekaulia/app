@@ -1,6 +1,6 @@
 /**
  * js/apotek/stockOpname.js
- * Sistem Stock Opname — Hanya mengirim kolom yang benar-benar ada di DB
+ * Sistem Stock Opname dengan Approval (Multi-Role) — VERSI SUPABASE (JSONB ITEMS)
  */
 
 window.AppApotekStockOpname = {
@@ -129,15 +129,11 @@ window.AppApotekStockOpname = {
 
         this.data.forEach(function(o) {
             if (o.stok_fisik !== '' && !isNaN(o.stok_fisik) && o.stok_fisik != (o.stok || 0)) {
-                // HANYA KIRIM KOLOM YANG BENAR-BENAR ADA DI DATABASE
                 itemsToSubmit.push({
-                    tanggal: new Date().toISOString().split('T')[0],
-                    obat_id: o.id,
-                    stok_sistem: o.stok || 0,
-                    stok_fisik: o.stok_fisik,
+                    obat_id: o.id, nama_obat: o.nama_obat, kode_obat: o.kode_obat,
+                    stok_sistem: o.stok || 0, stok_fisik: o.stok_fisik,
                     selisih: o.stok_fisik - (o.stok || 0),
-                    user_id: window.currentUserId || null,
-                    status: 'pending'
+                    satuan: o.satuan || '-'
                 });
             }
         });
@@ -146,7 +142,15 @@ window.AppApotekStockOpname = {
         if (!confirm('Ajukan ' + itemsToSubmit.length + ' perubahan stok ke Admin/Keuangan?')) return;
 
         Utils.toast('Mengirim pengajuan...', 'info');
-        window.sb.from('stock_opname_requests').insert(itemsToSubmit).then(function(res) {
+        
+        // SESUAIKAN DENGAN KOLOM DB: tanggal, status, items (JSONB), catatan, user_id
+        window.sb.from('stock_opname_requests').insert({
+            tanggal: new Date().toISOString().split('T')[0],
+            status: 'pending',
+            items: itemsToSubmit, 
+            catatan: 'Menunggu approval',
+            user_id: window.currentUserId || null
+        }).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Pengajuan opname terkirim! Menunggu approval.', 'success');
             self.loadMasterObat(); 
@@ -159,8 +163,7 @@ window.AppApotekStockOpname = {
     // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        // JOIN KE TABEL OBAT UNTUK MENGAMBIL NAMA OBAT (karena kolom nama_obat tidak ada di tabel ini)
-        window.sb.from('stock_opname_requests').select('*, users(nama), obat:obat_id(nama_obat, kode_obat)').eq('status', 'pending').order('created_at', { ascending: false }).then(function(snap) {
+        window.sb.from('stock_opname_requests').select('*, users(nama)').eq('status', 'pending').order('created_at', { ascending: false }).then(function(snap) {
             self.requests = snap.data || [];
             self.renderApprovalList();
         }).catch(function(err) { 
@@ -176,126 +179,105 @@ window.AppApotekStockOpname = {
             return;
         }
 
-        var grouped = {};
-        this.requests.forEach(function(req) {
-            var namaUser = (req.users && req.users.nama) ? req.users.nama : 'Apoteker';
-            var key = req.tanggal + '_' + (req.user_id || 'unknown') + '_' + namaUser;
-            
-            if (!grouped[key]) {
-                grouped[key] = {
-                    tanggal: req.tanggal,
-                    userName: namaUser,
-                    createdAt: req.created_at,
-                    items: []
-                };
-            }
-            grouped[key].items.push(req);
-        });
-
         var html = '<div class="space-y-4">';
-        var keys = Object.keys(grouped);
-        for (var k = 0; k < keys.length; k++) {
-            var group = grouped[keys[k]];
-            var tgl = group.createdAt ? new Date(group.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
-            
+        this.requests.forEach(function(req) {
+            var tgl = req.created_at ? new Date(req.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
             var totalRugi = 0, totalUntung = 0;
-            group.items.forEach(function(it) {
+            
+            // BACA DATA DARI JSONB 'items'
+            var reqItems = Array.isArray(req.items) ? req.items : [];
+            reqItems.forEach(function(it) {
                 if(it.selisih < 0) totalRugi += Math.abs(it.selisih);
                 else totalUntung += it.selisih;
             });
 
             html += '<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5">';
             html += '<div class="flex justify-between items-start mb-3">';
-            html += '<div><h3 class="font-bold text-gray-800 dark:text-white">Pengajuan dari: ' + Utils.escapeHtml(group.userName) + '</h3><p class="text-xs text-slate-400">' + tgl + '</p></div>';
-            html += '<span class="text-xs bg-amber-100 text-amber-600 px-2 py-1 rounded-full">Pending (' + group.items.length + ' Item)</span>';
+            html += '<div><h3 class="font-bold text-gray-800 dark:text-white">Pengajuan dari: ' + Utils.escapeHtml((req.users && req.users.nama) ? req.users.nama : 'Apoteker') + '</h3><p class="text-xs text-slate-400">' + tgl + '</p></div>';
+            html += '<span class="text-xs bg-amber-100 text-amber-600 px-2 py-1 rounded-full">Pending</span>';
             html += '</div>';
             
             html += '<div class="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg mb-3 text-xs space-y-1">';
-            html += '<div class="flex justify-between"><span class="text-slate-500">Total Item Diajukan:</span><span class="font-bold">' + group.items.length + ' Obat</span></div>';
+            html += '<div class="flex justify-between"><span class="text-slate-500">Total Item Diajukan:</span><span class="font-bold">' + reqItems.length + ' Obat</span></div>';
             html += '<div class="flex justify-between"><span class="text-slate-500">Total Stok Kurang:</span><span class="font-bold text-red-600">' + totalRugi + ' Unit</span></div>';
             html += '<div class="flex justify-between"><span class="text-slate-500">Total Stok Lebih:</span><span class="font-bold text-green-600">' + totalUntung + ' Unit</span></div>';
             html += '</div>';
 
-            var firstItemId = group.items[0].id; 
             html += '<div class="flex gap-2">';
-            html += '<button onclick="AppApotekStockOpname.lihatDetail(\'' + firstItemId + '\', \'' + group.tanggal + '\', \'' + (group.items[0].user_id || '') + '\')" class="flex-1 px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium">Lihat Detail</button>';
-            html += '<button onclick="AppApotekStockOpname.approveReq(\'' + group.tanggal + '\', \'' + (group.items[0].user_id || '') + '\')" class="flex-1 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">Approve & Update Stok</button>';
-            html += '<button onclick="AppApotekStockOpname.rejectReq(\'' + group.tanggal + '\', \'' + (group.items[0].user_id || '') + '\')" class="px-4 py-2 text-sm bg-red-100 hover:bg-red-200 text-red-600 rounded-lg font-medium">Tolak</button>';
+            html += '<button onclick="AppApotekStockOpname.lihatDetail(\'' + req.id + '\')" class="flex-1 px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium">Lihat Detail</button>';
+            html += '<button onclick="AppApotekStockOpname.approveReq(\'' + req.id + '\')" class="flex-1 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">Approve & Update Stok</button>';
+            html += '<button onclick="AppApotekStockOpname.rejectReq(\'' + req.id + '\')" class="px-4 py-2 text-sm bg-red-100 hover:bg-red-200 text-red-600 rounded-lg font-medium">Tolak</button>';
             html += '</div>';
             html += '</div>';
-        }
+        });
         html += '</div>';
         container.innerHTML = html;
         if(window.lucide) lucide.createIcons();
     },
 
-    lihatDetail: function(firstItemId, tanggal, userId) {
-        var query = window.sb.from('stock_opname_requests').select('*, obat:obat_id(nama_obat, kode_obat)').eq('status', 'pending').eq('tanggal', tanggal);
-        if(userId) query = query.eq('user_id', userId);
+    lihatDetail: function(reqId) {
+        var req = this.requests.find(function(r) { return r.id === reqId; });
+        if(!req) return;
 
-        query.then(function(snap) {
-            var items = snap.data || [];
-            var html = '<div class="p-6">';
-            html += '<div class="flex justify-between mb-4"><h3 class="font-bold text-lg">Detail Selisih Opname</h3><button onclick="Utils.closeModal()" class="text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button></div>';
-            html += '<div class="max-h-[60vh] overflow-y-auto border border-slate-100 rounded-lg">';
-            html += '<table class="w-full text-xs"><thead class="bg-slate-50 dark:bg-slate-900 sticky top-0"><tr><th class="p-2 text-left">Obat</th><th class="p-2 text-center">Sistem</th><th class="p-2 text-center">Fisik</th><th class="p-2 text-center">Selisih</th></tr></thead><tbody>';
-            
-            items.forEach(function(it) {
-                // AMBIL NAMA OBAT DARI HASIL JOIN
-                var namaObat = (it.obat && it.obat.nama_obat) ? it.obat.nama_obat : 'Obat Dihapus';
-                var selClass = it.selisih < 0 ? 'text-red-600 font-bold' : (it.selisih > 0 ? 'text-green-600 font-bold' : '');
-                html += '<tr class="border-t border-slate-100 dark:border-slate-700">';
-                html += '<td class="p-2">' + Utils.escapeHtml(namaObat) + '</td>';
-                html += '<td class="p-2 text-center">' + it.stok_sistem + '</td>';
-                html += '<td class="p-2 text-center">' + it.stok_fisik + '</td>';
-                html += '<td class="p-2 text-center ' + selClass + '">' + (it.selisih > 0 ? '+'+it.selisih : it.selisih) + '</td>';
-                html += '</tr>';
-            });
+        var reqItems = Array.isArray(req.items) ? req.items : [];
+        var html = '<div class="p-6">';
+        html += '<div class="flex justify-between mb-4"><h3 class="font-bold text-lg">Detail Selisih Opname</h3><button onclick="Utils.closeModal()" class="text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button></div>';
+        html += '<div class="max-h-[60vh] overflow-y-auto border border-slate-100 rounded-lg">';
+        html += '<table class="w-full text-xs"><thead class="bg-slate-50 dark:bg-slate-900 sticky top-0"><tr><th class="p-2 text-left">Obat</th><th class="p-2 text-center">Sistem</th><th class="p-2 text-center">Fisik</th><th class="p-2 text-center">Selisih</th></tr></thead><tbody>';
+        
+        reqItems.forEach(function(it) {
+            var selClass = it.selisih < 0 ? 'text-red-600 font-bold' : (it.selisih > 0 ? 'text-green-600 font-bold' : '');
+            html += '<tr class="border-t border-slate-100 dark:border-slate-700">';
+            html += '<td class="p-2">' + Utils.escapeHtml(it.nama_obat) + '</td>';
+            html += '<td class="p-2 text-center">' + it.stok_sistem + '</td>';
+            html += '<td class="p-2 text-center">' + it.stok_fisik + '</td>';
+            html += '<td class="p-2 text-center ' + selClass + '">' + (it.selisih > 0 ? '+'+it.selisih : it.selisih) + '</td>';
+            html += '</tr>';
+        });
 
-            html += '</tbody></table></div></div>';
-            Utils.openModal(html);
-            if(window.lucide) lucide.createIcons();
-        }).catch(function(err) { Utils.toast('Gagal: ' + err.message, 'error'); });
+        html += '</tbody></table></div></div>';
+        Utils.openModal(html);
+        if(window.lucide) lucide.createIcons();
     },
 
-    approveReq: function(tanggal, userId) {
+    approveReq: function(reqId) {
         var self = this;
+        var req = this.requests.find(function(r) { return r.id === reqId; });
+        if(!req) return;
+
         if(!confirm('Setujui pengajuan ini? Stok sistem akan otomatis diperbarui.')) return;
 
         Utils.toast('Memproses update stok...', 'info');
 
-        var query = window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').eq('tanggal', tanggal);
-        if(userId) query = query.eq('user_id', userId);
+        var reqItems = Array.isArray(req.items) ? req.items : [];
 
-        query.then(function(snap) {
-            var items = snap.data || [];
-            if (items.length === 0) throw new Error('Data tidak ditemukan');
+        // 1. Kumpulkan promise untuk update stok master obat
+        var updateStokPromises = reqItems.map(function(it) {
+            var delta = (typeof it.selisih === 'number') ? it.selisih : ((it.stok_fisik || 0) - (it.stok_sistem || 0));
+            
+            return window.sb.from('obat').select('stok').eq('id', it.obat_id).single()
+                .then(function(res) {
+                    var currentStok = res.data ? (res.data.stok || 0) : 0;
+                    var newStok = currentStok + delta;
+                    
+                    return window.sb.from('obat').update({ 
+                        stok: newStok, 
+                        updated_at: new Date().toISOString() 
+                    }).eq('id', it.obat_id);
+                });
+        });
 
-            var updateStokPromises = items.map(function(it) {
-                return window.sb.from('obat').select('stok').eq('id', it.obat_id).single()
-                    .then(function(res) {
-                        var currentStok = res.data ? (res.data.stok || 0) : 0;
-                        var newStok = currentStok + it.selisih;
-                        
-                        return window.sb.from('obat').update({ 
-                            stok: newStok, 
-                            updated_at: new Date().toISOString() 
-                        }).eq('id', it.obat_id);
-                    });
-            });
+        // Jalankan semua update stok paralel
+        Promise.all(updateStokPromises).then(function(results) {
+            var hasError = results.some(function(r) { return r.error; });
+            if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
 
-            return Promise.all(updateStokPromises).then(function(results) {
-                var hasError = results.some(function(r) { return r.error; });
-                if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
-
-                var updateStatusQuery = window.sb.from('stock_opname_requests').update({ 
-                    status: 'approved'
-                }).eq('status', 'pending').eq('tanggal', tanggal);
-                
-                if(userId) updateStatusQuery = updateStatusQuery.eq('user_id', userId);
-
-                return updateStatusQuery;
-            });
+            // 2. Update status pengajuan jadi approved (SESUAI NAMA KOLOM DB: catatan)
+            return window.sb.from('stock_opname_requests').update({ 
+                status: 'approved', 
+                catatan: 'Disetujui oleh ' + (window.currentUserName || 'Admin'),
+                updated_at: new Date().toISOString()
+            }).eq('id', reqId);
         }).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Pengajuan disetujui & stok diupdate!', 'success');
@@ -307,17 +289,16 @@ window.AppApotekStockOpname = {
         });
     },
 
-    rejectReq: function(tanggal, userId) {
+    rejectReq: function(reqId) {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
-        var query = window.sb.from('stock_opname_requests').update({ 
-            status: 'rejected'
-        }).eq('status', 'pending').eq('tanggal', tanggal);
-        
-        if(userId) query = query.eq('user_id', userId);
-
-        query.then(function(res) {
+        // SESUAI NAMA KOLOM DB: catatan
+        window.sb.from('stock_opname_requests').update({ 
+            status: 'rejected',
+            catatan: 'Ditolak oleh ' + (window.currentUserName || 'Admin'),
+            updated_at: new Date().toISOString()
+        }).eq('id', reqId).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Pengajuan ditolak.', 'info');
             self.loadRequests();
