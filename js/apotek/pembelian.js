@@ -1,10 +1,14 @@
 /**
  * js/apotek/pembelian.js
- * Pembelian Obat (Cash & Kredit)
+ * Pembelian Obat (Cash & Kredit) — VERSI SUPABASE (FINAL)
  */
 
 window.AppApotekPembelian = {
     obatList: [],
+
+    destroy: function() {
+        this.obatList = [];
+    },
 
     render: function() {
         var html = '<div class="page-enter max-w-5xl">';
@@ -16,12 +20,15 @@ window.AppApotekPembelian = {
     },
 
     init: function() {
-        window.sb.from('obat').get().then(snap => {
-            AppApotekPembelian.obatList = [];
-            (data || []).forEach(doc => { var d = doc; d.id = doc.id; AppApotekPembelian.obatList.push(d); });
-            AppApotekPembelian.obatList.sort((a, b) => (a.nama_obat || '').localeCompare(b.nama_obat || ''));
+        // FIX: Hapus .get(), ganti .select('*')
+        window.sb.from('obat').select('*').then(function(snap) {
+            AppApotekPembelian.obatList = snap.data || [];
+            AppApotekPembelian.obatList.sort(function(a, b) { return (a.nama_obat || '').localeCompare(b.nama_obat || ''); });
             AppApotekPembelian.renderForm();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error'); 
+        });
     },
 
     renderForm: function() {
@@ -35,7 +42,6 @@ window.AppApotekPembelian = {
         html += '<div><label class="block text-xs font-medium text-slate-500 mb-1">Tanggal *</label><input type="date" id="beli-tgl" value="' + today + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required></div>';
         html += '<div><label class="block text-xs font-medium text-slate-500 mb-1">Supplier *</label><input type="text" id="beli-supplier" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" placeholder="PT. Kimia Farma" required></div>';
         
-        // TAMBAHAN: METODE PEMBAYARAN
         html += '<div><label class="block text-xs font-medium text-slate-500 mb-1">Metode Bayar *</label>';
         html += '<select id="beli-metode" onchange="AppApotekPembelian.toggleKredit()" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required>';
         html += '<option value="tunai">Tunai (Cash)</option>';
@@ -43,7 +49,7 @@ window.AppApotekPembelian = {
         html += '</select></div>';
         html += '</div>';
 
-        // TAMBAHAN: FIELD JATUH TEMPO (Hanya muncul kalau kredit)
+        // FIELD JATUH TEMPO
         html += '<div id="beli-kredit-wrapper" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">';
         html += '<div><label class="block text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">Jatuh Tempo *</label><input type="date" id="beli-jatuh-tempo" class="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 dark:text-white rounded-lg text-sm"></div>';
         html += '<div class="flex items-end"><p class="text-xs text-amber-600 dark:text-amber-400 pb-2">⚠️ Pembelian ini akan masuk ke daftar <strong>Hutang Usaha</strong> dan harus dilunasi sebelum tanggal jatuh tempo.</p></div>';
@@ -72,11 +78,10 @@ window.AppApotekPembelian = {
         html += '<div id="beli-riwayat"></div>';
 
         document.getElementById('pembelian-content').innerHTML = html;
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
         this.loadRiwayat();
     },
 
-    // FUNGSI BARU: Toggle tampilan field kredit
     toggleKredit: function() {
         var metode = document.getElementById('beli-metode').value;
         var wrapper = document.getElementById('beli-kredit-wrapper');
@@ -110,13 +115,13 @@ window.AppApotekPembelian = {
         html += '</div></div>';
 
         container.insertAdjacentHTML('beforeend', html);
-        lucide.createIcons({ nodes: [container] });
+        if (window.lucide) lucide.createIcons({ nodes: [container] });
     },
 
     onSelectObat: function(idx) {
         var obat_id = document.getElementById('beli-obat-' + idx).value;
         if (obat_id) {
-            var obat = this.obatList.find(o => o.id === obat_id);
+            var obat = this.obatList.find(function(o) { return o.id === obat_id; });
             if (obat) {
                 document.getElementById('beli-harga-' + idx).value = obat.hpp || 0;
                 this.hitungTotal();
@@ -136,19 +141,23 @@ window.AppApotekPembelian = {
 
     hitungTotal: function() {
         var container = document.getElementById('beli-items-container');
+        if (!container) return;
         var rows = container.querySelectorAll('[id^="beli-row-"]');
         var totalItem = 0, total_harga = 0;
-        rows.forEach(row => {
+        rows.forEach(function(row) {
             var idx = row.id.split('-').pop();
-            var qty = parseInt(document.getElementById('beli-qty-' + idx)?.value) || 0;
-            var harga = parseInt(document.getElementById('beli-harga-' + idx)?.value) || 0;
+            var qty = parseInt(document.getElementById('beli-qty-' + idx).value) || 0;
+            var harga = parseInt(document.getElementById('beli-harga-' + idx).value) || 0;
             var sub = qty * harga;
-            document.getElementById('beli-sub-' + idx).textContent = Utils.formatRupiah(sub);
+            var subEl = document.getElementById('beli-sub-' + idx);
+            if (subEl) subEl.textContent = Utils.formatRupiah(sub);
             totalItem += qty;
             total_harga += sub;
         });
-        document.getElementById('beli-total-item').textContent = totalItem;
-        document.getElementById('beli-total-harga').textContent = Utils.formatRupiah(total_harga);
+        var elItem = document.getElementById('beli-total-item');
+        var elHarga = document.getElementById('beli-total-harga');
+        if (elItem) elItem.textContent = totalItem;
+        if (elHarga) elHarga.textContent = Utils.formatRupiah(total_harga);
     },
 
     simpan: function() {
@@ -167,20 +176,24 @@ window.AppApotekPembelian = {
             return;
         }
 
+        var self = this;
         var items = [];
         var rows = document.querySelectorAll('[id^="beli-row-"]');
-        rows.forEach(row => {
+        rows.forEach(function(row) {
             var idx = row.id.split('-').pop();
-            var obat_id = document.getElementById('beli-obat-' + idx)?.value;
-            if (obat_id) {
-                var obat = this.obatList.find(o => o.id === obat_id);
-                items.push({
-                    obat_id: obat_id,
-                    nama_obat: obat ? obat.nama_obat : '-',
-                    kode_obat: obat ? obat.kode_obat : '-',
-                    qty: parseInt(document.getElementById('beli-qty-' + idx).value) || 0,
-                    hargaBeli: parseInt(document.getElementById('beli-harga-' + idx).value) || 0
-                });
+            var obat_id = document.getElementById('beli-obat-' + idx);
+            if (obat_id && obat_id.value) {
+                var obat = self.obatList.find(function(o) { return o.id === obat_id.value; });
+                var qty = parseInt(document.getElementById('beli-qty-' + idx).value) || 0;
+                if (qty > 0) {
+                    items.push({
+                        obat_id: obat_id.value,
+                        nama_obat: obat ? obat.nama_obat : '-',
+                        kode_obat: obat ? obat.kode_obat : '-',
+                        qty: qty,
+                        hargaBeli: parseInt(document.getElementById('beli-harga-' + idx).value) || 0
+                    });
+                }
             }
         });
 
@@ -189,13 +202,9 @@ window.AppApotekPembelian = {
             return;
         }
 
-        Utils.toast('Menyimpan & mengupdate stok...', 'info');
-        var total_harga = items.reduce((sum, item) => sum + (item.qty * item.hargaBeli), 0);
+        var total_harga = items.reduce(function(sum, item) { return sum + (item.qty * item.hargaBeli); }, 0);
 
-        // FIX: simpan pembelian & update stok dalam satu batch atomik.
-        var batch = db.batch();
-        var pRef = window.sb.from('pembelian').doc();
-        batch.set(pRef, {
+        var obj = {
             no_faktur: no_faktur,
             tanggal: tgl,
             supplier: supplier,
@@ -204,18 +213,37 @@ window.AppApotekPembelian = {
             status_pelunasan: metode === 'kredit' ? 'belum_lunas' : 'lunas',
             items: items,
             total_harga: total_harga,
-            createdAt: new Date().toISOString()
-        });
-        items.forEach(function(item) {
-            if (item.qty > 0) {
-                var obatRef = window.sb.from('obat').doc(item.obat_id);
-                batch.update(obatRef, { stok: /* TODO_INCREMENT(item.qty) */ });
-            }
-        });
-        batch.commit().then(() => {
+            created_at: new Date().toISOString() // FIX: createdAt -> created_at
+        };
+
+        Utils.toast('Menyimpan & mengupdate stok...', 'info');
+
+        // ==========================================
+        // FIX TOTAL: HAPUS db.batch() FIREBASE!
+        // Supabase: Insert pembelian, lalu Fetch stok, Hitung stok baru, lalu Update stok
+        // ==========================================
+        window.sb.from('pembelian').insert(obj).select().then(function(res) {
+            if (res.error) throw res.error;
+            
+            // Kumpulkan janji untuk update stok obat
+            var stockPromises = items.map(function(item) {
+                // 1. Ambil stok sekarang dari database
+                return window.sb.from('obat').select('stok').eq('id', item.obat_id).single().then(function(snap) {
+                    var currentStok = snap.data ? (snap.data.stok || 0) : 0;
+                    var newStok = currentStok + item.qty; // Tambah stok pembelian
+                    
+                    // 2. Update stok baru
+                    return window.sb.from('obat').update({ stok: newStok }).eq('id', item.obat_id);
+                });
+            });
+
+            return Promise.all(stockPromises);
+
+        }).then(function() {
             Utils.toast('Pembelian berhasil disimpan! Stok obat sudah bertambah.', 'success');
             AppApotekPembelian.init();
-        }).catch(err => {
+        }).catch(function(err) {
+            console.error(err);
             Utils.toast('Gagal menyimpan: ' + err.message, 'error');
         });
     },
@@ -224,9 +252,9 @@ window.AppApotekPembelian = {
         var container = document.getElementById('beli-riwayat');
         if(!container) return;
 
-        window.sb.from('pembelian').order('createdAt', { ascending: false }).limit(10).get().then(snap => {
-            var riwayat = [];
-            (data || []).forEach(doc => { var d = doc; d.id = doc.id; riwayat.push(d); });
+        // FIX: Hapus .get(), ganti .select('*'), dan ambil dari snap.data
+        window.sb.from('pembelian').select('*').order('created_at', { ascending: false }).limit(10).then(function(snap) {
+            var riwayat = snap.data || [];
 
             if (riwayat.length === 0) { container.innerHTML = ''; return; }
 
@@ -238,12 +266,10 @@ window.AppApotekPembelian = {
             riwayat.forEach(function(r) {
                 var tgl = r.tanggal ? new Date(r.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
                 
-                // Badge Metode
                 var metodeBadge = (r.metode_pembayaran === 'kredit') ? 
                     '<span class="text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-600 px-2 py-0.5 rounded-full">KREDIT</span>' : 
                     '<span class="text-xs bg-green-50 dark:bg-green-900/30 text-green-600 px-2 py-0.5 rounded-full">TUNAI</span>';
 
-                // Badge Status Pelunasan
                 var statusBadge = (r.status_pelunasan === 'belum_lunas') ? 
                     '<span class="text-xs bg-red-50 dark:bg-red-900/30 text-red-600 px-2 py-0.5 rounded-full ml-1">Belum Lunas</span>' : 
                     '<span class="text-xs bg-green-50 dark:bg-green-900/30 text-green-600 px-2 py-0.5 rounded-full ml-1">Lunas</span>';
@@ -259,6 +285,8 @@ window.AppApotekPembelian = {
 
             html += '</tbody></table></div>';
             container.innerHTML = html;
-        }).catch(err => console.error("Gagal load riwayat:", err));
+        }).catch(function(err) { 
+            console.error("Gagal load riwayat:", err); 
+        });
     }
 };
