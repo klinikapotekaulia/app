@@ -136,8 +136,8 @@ window.AppApotekObat = {
         html += '</div>';
 
         html += '<div class="grid grid-cols-2 gap-4">';
-        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Stok Awal</label><input type="number" id="fo-stok" value="' + (isEdit ? (o.stok || 0) : 0) + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" ' + (isEdit ? '' : 'readonly') + '></div>';
-        html += '<div class="flex items-end"><p class="text-xs text-slate-400 pb-2">*Stok awal 0. Untuk menambah stok, gunakan menu <strong>Pembelian Obat</strong>.</p></div>';
+        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Stok Awal</label><input type="number" id="fo-stok" value="' + (isEdit ? (o.stok || 0) : 0) + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
+        html += '<div class="flex items-end"><p class="text-xs text-slate-400 pb-2">Isi stok awal jika ada, atau biarkan 0.</p></div>';
         html += '</div>';
 
         html += '<div class="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">';
