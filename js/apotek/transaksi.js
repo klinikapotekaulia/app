@@ -398,7 +398,7 @@ window.AppApotekTransaksi = {
         document.getElementById('trx-grand-total').textContent = Utils.formatRupiah(totalRounded);
     },
 
-    simpan: function() {
+        simpan: function() {
         var self = this;
         
         // Validasi Resep Luar
@@ -491,7 +491,7 @@ window.AppApotekTransaksi = {
         var obj = {
             tipe: this.tipe, tanggal: new Date().toISOString().split('T')[0],
             nama_pasien: document.getElementById('trx-pasien').value.trim(),
-            pasien_id: null, // FIX: Dikasih null agar tidak error jika kolom NOT NULL
+            pasien_id: null, 
             kasir_id: window.currentUserId || null,
             kasir_nama: window.currentUserName || 'Kasir',
             dokter_id: dokterIdFinal, 
@@ -511,12 +511,18 @@ window.AppApotekTransaksi = {
             var trxId = res.data[0].id;
             obj.id = trxId;
 
+            // ==========================================
+            // FIX PENGURANGAN STOK BARU (ANTI REALTIME BUG)
+            // ==========================================
             var stockPromises = items.map(function(item) {
-                return window.sb.from('obat').select('stok').eq('id', item.obat_id).single().then(function(snap) {
-                    var currentStok = snap.data ? (snap.data.stok || 0) : 0;
-                    var newStok = Math.max(0, currentStok - item.jumlah);
-                    return window.sb.from('obat').update({ stok: newStok }).eq('id', item.obat_id);
-                });
+                // 1. Langsung kurangi stok di variabel lokal (aman dari gangguan Realtime)
+                var localObat = self.masterObat.find(function(o) { return o.id === item.obat_id; });
+                if (localObat) {
+                    localObat.stok = Math.max(0, (localObat.stok || 0) - item.jumlah);
+                    // 2. Kirman perintah update ke database (tidak perlu fetch ulang, langsung kirim angka final)
+                    return window.sb.from('obat').update({ stok: localObat.stok }).eq('id', item.obat_id);
+                }
+                return Promise.resolve();
             });
 
             if (self.tipe === 'resep_klinik' && obj.resep_id) {
@@ -532,9 +538,9 @@ window.AppApotekTransaksi = {
             console.error(err);
             Utils.toast('Gagal menyimpan: ' + err.message, 'error');
             if (printWindow) printWindow.close();
+            AppApotekTransaksi.init(); // Tetap refresh UI walau gagal, untuk mengembalikan stok lokal ke semula
         });
     },
-
     cetakStruk: function(data, w) {
         if (!w) { Utils.toast('Popup struk diblokir browser. Izinkan pop-up untuk situs ini.', 'error'); return; }
         var tgl = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
