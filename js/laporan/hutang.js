@@ -1,6 +1,6 @@
 /**
  * js/laporan/hutang.js
- * Manajemen Hutang Usaha (Pembayaran Faktur Kredit)
+ * Manajemen Hutang Usaha (Pembayaran Faktur Kredit) — VERSI SUPABASE FIX
  */
 
 window.AppLaporanHutang = {
@@ -22,10 +22,9 @@ window.AppLaporanHutang = {
 
     init: function() {
         var self = this;
-        // Ambil semua pembelian yang BUKAN lunas (berarti belum_lunas atau menunggu_approve)
-        window.sb.from('pembelian').neq('status_pelunasan', 'lunas').get().then(snap => {
-            self.data = [];
-            (data || []).forEach(doc => { var d = doc; d.id = doc.id; self.data.push(d); });
+        // FIX: Hapus .get(), gunakan .select('*'), akses via snap.data
+        window.sb.from('pembelian').select('*').neq('status_pelunasan', 'lunas').then(function(snap) {
+            self.data = snap.data || [];
             
             // Urutkan berdasarkan tanggal jatuh tempo terdekat
             self.data.sort(function(a, b) {
@@ -35,7 +34,10 @@ window.AppLaporanHutang = {
             });
 
             self.renderList();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error'); 
+        });
     },
 
     renderList: function() {
@@ -93,11 +95,9 @@ window.AppLaporanHutang = {
             
             html += '<div class="flex gap-2">';
             if (h.status_pelunasan === 'belum_lunas') {
-                // Apotek, Admin, Keuangan bisa ajukan bayar (sesuai matrix)
                 html += '<button onclick="AppLaporanHutang.ajukanBayar(\'' + h.id + '\')" class="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1"><i data-lucide="send" class="w-3 h-3"></i> Ajukan Bayar</button>';
             } else if (h.status_pelunasan === 'menunggu_approve') {
                 if (isApprover) {
-                    // Hanya Admin & Keuangan yang bisa Approve
                     html += '<button onclick="AppLaporanHutang.lunasi(\'' + h.id + '\')" class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg font-medium flex items-center gap-1"><i data-lucide="check-circle" class="w-3 h-3"></i> Approve & Bayar</button>';
                     html += '<button onclick="AppLaporanHutang.tolak(\'' + h.id + '\')" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-2 rounded-lg font-medium">Tolak</button>';
                 } else {
@@ -112,19 +112,25 @@ window.AppLaporanHutang = {
 
         html += '</div>';
         container.innerHTML = html;
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     },
 
     // Apotek/Staff klik untuk meminta pencairan kasir
     ajukanBayar: function(id) {
         if (!confirm('Ajukan pembayaran faktur ini ke Admin/Keuangan?')) return;
         Utils.toast('Mengajukan pembayaran...', 'info');
+        
+        // FIX: TAMBAHKAN .eq('id', id) AGAR HANYA FAKTUR INI YANG BERUBAH
         window.sb.from('pembelian').update({
             status_pelunasan: 'menunggu_approve'
-        }).then(function() {
+        }).eq('id', id).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Pengajuan terkirim!', 'success');
             AppLaporanHutang.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     // Admin/Keuangan klik untuk mencairkan uang
@@ -132,52 +138,64 @@ window.AppLaporanHutang = {
         if (!confirm('Setujui pembayaran dan lunasi faktur ini? Kas akan terpotong.')) return;
         Utils.toast('Memproses pelunasan...', 'info');
         
-        var batch = db.batch();
-        
-        // 1. Update status faktur menjadi lunas
-        var fakturRef = window.sb.from('pembelian').doc(id);
-        batch.update(fakturRef, {
-            status_pelunasan: 'lunas',
-            tanggalLunas: new Date().toISOString(),
-            dilunasiOleh: window.currentUserName || 'Keuangan'
-        });
+        var self = this;
 
-        // 2. Catat ke buku kas pengeluaran (biar masuk laporan keuangan nanti)
-        var kasRef = window.sb.from('kas_keluar').doc();
-        batch.set(kasRef, {
-            tanggal: new Date().toISOString().split('T')[0],
-            keterangan: 'Pelunasan Faktur: ' + id.substring(0,8).toUpperCase(),
-            kategori: 'Hutang Usaha',
-            jumlah: 0, // diupdate setelah baca faktur
-            status: 'approved', // FIX: tanpa field ini pelunasan tidak masuk laporan & jurnal
-            referenceId: id,
-            inputOleh: window.currentUserName || 'Keuangan',
-            createdAt: new Date().toISOString()
-        });
+        // FIX HAPUS db.batch(): Ganti dengan Promise berantai Supabase
+        // 1. Ambil data faktur dulu untuk mendapatkan total_harga
+        window.sb.from('pembelian').select('total_harga, no_faktur, supplier').eq('id', id).single()
+        .then(function(res) {
+            if (!res.data) throw new Error('Data faktur tidak ditemukan');
+            
+            var totalHarga = res.data.total_harga || 0;
+            var noFaktur = res.data.no_faktur || id.substring(0,8).toUpperCase();
+            var namaSupplier = res.data.supplier || '-';
 
-        // FIX: tangani dokumen hilang & error get/commit secara eksplisit.
-        window.sb.from('pembelian').select('*').eq('id', id).single().then(function(doc) {
-            if (!doc.exists) {
-                Utils.toast('Dokumen faktur tidak ditemukan!', 'error');
-                return;
-            }
-            var total = doc.total_harga || 0;
-            batch.update(kasRef, { jumlah: total });
-            return batch.commit().then(function() {
-                Utils.toast('Faktur berhasil dilunasi!', 'success');
-                AppLaporanHutang.init();
+            // 2. Update status faktur menjadi lunas
+            return window.sb.from('pembelian').update({
+                status_pelunasan: 'lunas',
+                tanggalLunas: new Date().toISOString(),
+                dilunasiOleh: window.currentUserName || 'Keuangan'
+            }).eq('id', id).then(function(res) {
+                if (res.error) throw res.error;
+
+                // 3. Catat ke buku kas pengeluaran
+                return window.sb.from('kas_keluaran').insert({
+                    tanggal: new Date().toISOString().split('T')[0],
+                    keterangan: 'Pelunasan Faktur: ' + noFaktur + ' (' + namaSupplier + ')',
+                    kategori: 'Hutang Usaha',
+                    jumlah: totalHarga,
+                    status: 'approved',
+                    referenceId: id,
+                    inputOleh: window.currentUserName || 'Keuangan',
+                    createdAt: new Date().toISOString()
+                });
             });
-        }).catch(function(err) { Utils.toast('Gagal: ' + err.message, 'error'); });
+        })
+        .then(function(res) {
+            if (res.error) throw res.error;
+            Utils.toast('Faktur berhasil dilunasi!', 'success');
+            self.init();
+        })
+        .catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     // Admin/Keuangan nolak pengajuan (misal supplier belum datang)
     tolak: function(id) {
         if (!confirm('Tolak pengajuan ini? Faktur kembali ke status Belum Lunas.')) return;
+        
+        // FIX: TAMBAHKAN .eq('id', id)
         window.sb.from('pembelian').update({
             status_pelunasan: 'belum_lunas'
-        }).then(function() {
+        }).eq('id', id).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Pengajuan ditolak.', 'info');
             AppLaporanHutang.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     }
 };
