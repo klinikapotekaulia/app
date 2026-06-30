@@ -254,10 +254,12 @@ var _loadedScripts = {};
 
 function loadScript(url) {
     return new Promise(function (resolve, reject) {
-        if (_loadedScripts[url]) { resolve(); return; }
+        // Cegah cache: tambah timestamp di belakang URL
+        var cacheUrl = url + '?v=' + Date.now();
+        
         var script = document.createElement('script');
-        script.src = url;
-        script.onload  = function () { _loadedScripts[url] = true; resolve(); };
+        script.src = cacheUrl;
+        script.onload  = function () { resolve(); };
         script.onerror = function () { reject(new Error('Gagal memuat file: ' + url)); };
         document.head.appendChild(script);
     });
