@@ -15,8 +15,12 @@ window.AppManajemenAbsensi = {
         this.selfKaryawanId = null;
     },
 
-    // FIX: gunakan tanggal lokal (WIB) supaya tidak mundur 1 hari saat dini hari.
-    todayStr: (function(){ var d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOStrubstr(0, 10); })(),
+    // FIX #1: toISOStrubstr → toISOString().slice
+    todayStr: (function(){ 
+        var d = new Date(); 
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); 
+        return d.toISOString().slice(0, 10); 
+    })(),
 
     render: function() {
         var role = window.currentRole || 'apotek';
@@ -50,7 +54,6 @@ window.AppManajemenAbsensi = {
     init: function() {
         var self = this;
         
-        // FIX: Hapus .get()
         var pKaryawan = window.sb.from('karyawan').select('*').eq('status', 'aktif');
         var pAbsensi = window.sb.from('absensi').select('*').eq('tanggal', self.todayStr);
 
@@ -59,7 +62,6 @@ window.AppManajemenAbsensi = {
             self.data = results[1].data || [];
 
             // Cari karyawan_id milik staf yang sedang login
-            // FIX: HAPUS TYPO "kemungkinId" menjadi "selfKaryawanId"
             self.selfKaryawanId = null;
             if (window.currentUserId) {
                 var myKary = self.karyawanList.find(function(k) { return k.user_id === window.currentUserId; });
@@ -84,15 +86,16 @@ window.AppManajemenAbsensi = {
         var statusEl = document.getElementById('my-status');
         if(!btnContainer || !statusEl) return;
 
-        // FIX: Tambahkan `self.`
-        if (!self.selfKaryawanId) {
+        // FIX #2: self → this
+        if (!this.selfKaryawanId) {
             statusEl.innerHTML = '<span class="text-amber-500 dark:text-amber-400 font-semibold">Akun belum dihubungkan ke data karyawan</span>';
             btnContainer.innerHTML = '<span class="text-xs text-slate-400 dark:text-slate-500 italic">Hubungkan akun Anda di menu Manajemen Karyawan terlebih dahulu.</span>';
             if(window.lucide) lucide.createIcons();
             return;
         }
 
-        var myAbsen = this.data.find(function(d) { return d.karyawan_id === self.selfKaryawanId; });
+        // FIX #2: self → this
+        var myAbsen = this.data.find(function(d) { return d.karyawan_id === AppManajemenAbsensi.selfKaryawanId; });
         
         if (!myAbsen) {
             statusEl.innerHTML = 'Status: <span class="text-red-500 font-semibold">Belum Check-In</span>';
@@ -111,17 +114,19 @@ window.AppManajemenAbsensi = {
     },
 
     selfCheckIn: function() {
-        // FIX: Tambahkan `self.`
+        // FIX #2: self → this
         if (!this.selfKaryawanId) {
             Utils.toast('Akun belum dihubungkan ke data karyawan.', 'error');
             return;
         }
         
-        var myKary = this.karyawanList.find(function(k) { return k.id === self.selfKaryawanId; });
+        var selfKaryawanId = this.selfKaryawanId;
+        var myKary = this.karyawanList.find(function(k) { return k.id === selfKaryawanId; });
+        var todayStr = this.todayStr;
         
         window.sb.from('absensi').insert({
-            tanggal: this.todayStr,
-            karyawan_id: this.selfKaryawanId,
+            tanggal: todayStr,
+            karyawan_id: selfKaryawanId,
             namanya: myKary ? myKary.nama : 'Karyawan',
             check_in: new Date().toISOString(),
             check_out: null,
@@ -138,7 +143,6 @@ window.AppManajemenAbsensi = {
     },
 
     selfCheckOut: function(id) {
-        // FIX: Tambahkan `self.`
         window.sb.from('absensi').update({
             check_out: new Date().toISOString(),
             status: 'hadir'
@@ -221,7 +225,8 @@ window.AppManajemenAbsensi = {
 
         html += '<div class="grid grid-cols-2 gap-4">';
         html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Jam Masuk</label><input type="time" id="man-masuk" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
-        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Jam Pulang</label><input type="time" id="man-pulang" class="wultiparty-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
+        // FIX #3: wultiparty-3 → w-full px-3
+        html += '<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Jam Pulang</label><input type="time" id="man-pulang" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
         html += '</div>';
 
         html += '<div class="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">';
@@ -250,7 +255,7 @@ window.AppManajemenAbsensi = {
 
         if (!karyId) { Utils.toast('Pilih karyawan', 'error'); return; }
 
-        // Konversi jam ke format ISO String (Bukan Firebase Timestamp)
+        // Konversi jam ke format ISO String
         var checkInTs = jamMasuk ? this.todayStr + 'T' + jamMasuk + ':00' : null;
         var checkOutTs = jamPulang ? this.todayStr + 'T' + jamPulang + ':00' : null;
 
