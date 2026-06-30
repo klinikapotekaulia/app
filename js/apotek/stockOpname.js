@@ -1,6 +1,6 @@
 /**
  * js/apotek/stockOpname.js
- * Sistem Stock Opname dengan Approval (Multi-Role) — VERSI SUPABASE (FLAT TABLE)
+ * Sistem Stock Opname — Hanya mengirim kolom yang benar-benar ada di DB
  */
 
 window.AppApotekStockOpname = {
@@ -129,11 +129,10 @@ window.AppApotekStockOpname = {
 
         this.data.forEach(function(o) {
             if (o.stok_fisik !== '' && !isNaN(o.stok_fisik) && o.stok_fisik != (o.stok || 0)) {
-                // HAPUS 'keterangan' KARENA KOLOM TERSEBUT TIDAK ADA DI DATABASE
+                // HANYA KIRIM KOLOM YANG BENAR-BENAR ADA DI DATABASE
                 itemsToSubmit.push({
                     tanggal: new Date().toISOString().split('T')[0],
                     obat_id: o.id,
-                    nama_obat: o.nama_obat,
                     stok_sistem: o.stok || 0,
                     stok_fisik: o.stok_fisik,
                     selisih: o.stok_fisik - (o.stok || 0),
@@ -150,7 +149,7 @@ window.AppApotekStockOpname = {
         window.sb.from('stock_opname_requests').insert(itemsToSubmit).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Pengajuan opname terkirim! Menunggu approval.', 'success');
-            self.loadMasterObat(); // Reset form
+            self.loadMasterObat(); 
         }).catch(function(err) { 
             console.error(err);
             Utils.toast('Gagal: ' + err.message, 'error'); 
@@ -160,7 +159,8 @@ window.AppApotekStockOpname = {
     // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        window.sb.from('stock_opname_requests').select('*, users(nama)').eq('status', 'pending').order('created_at', { ascending: false }).then(function(snap) {
+        // JOIN KE TABEL OBAT UNTUK MENGAMBIL NAMA OBAT (karena kolom nama_obat tidak ada di tabel ini)
+        window.sb.from('stock_opname_requests').select('*, users(nama), obat:obat_id(nama_obat, kode_obat)').eq('status', 'pending').order('created_at', { ascending: false }).then(function(snap) {
             self.requests = snap.data || [];
             self.renderApprovalList();
         }).catch(function(err) { 
@@ -230,7 +230,7 @@ window.AppApotekStockOpname = {
     },
 
     lihatDetail: function(firstItemId, tanggal, userId) {
-        var query = window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').eq('tanggal', tanggal);
+        var query = window.sb.from('stock_opname_requests').select('*, obat:obat_id(nama_obat, kode_obat)').eq('status', 'pending').eq('tanggal', tanggal);
         if(userId) query = query.eq('user_id', userId);
 
         query.then(function(snap) {
@@ -241,9 +241,11 @@ window.AppApotekStockOpname = {
             html += '<table class="w-full text-xs"><thead class="bg-slate-50 dark:bg-slate-900 sticky top-0"><tr><th class="p-2 text-left">Obat</th><th class="p-2 text-center">Sistem</th><th class="p-2 text-center">Fisik</th><th class="p-2 text-center">Selisih</th></tr></thead><tbody>';
             
             items.forEach(function(it) {
+                // AMBIL NAMA OBAT DARI HASIL JOIN
+                var namaObat = (it.obat && it.obat.nama_obat) ? it.obat.nama_obat : 'Obat Dihapus';
                 var selClass = it.selisih < 0 ? 'text-red-600 font-bold' : (it.selisih > 0 ? 'text-green-600 font-bold' : '');
                 html += '<tr class="border-t border-slate-100 dark:border-slate-700">';
-                html += '<td class="p-2">' + Utils.escapeHtml(it.nama_obat) + '</td>';
+                html += '<td class="p-2">' + Utils.escapeHtml(namaObat) + '</td>';
                 html += '<td class="p-2 text-center">' + it.stok_sistem + '</td>';
                 html += '<td class="p-2 text-center">' + it.stok_fisik + '</td>';
                 html += '<td class="p-2 text-center ' + selClass + '">' + (it.selisih > 0 ? '+'+it.selisih : it.selisih) + '</td>';
@@ -286,7 +288,6 @@ window.AppApotekStockOpname = {
                 var hasError = results.some(function(r) { return r.error; });
                 if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
 
-                // HAPUS 'keterangan' DI SINI
                 var updateStatusQuery = window.sb.from('stock_opname_requests').update({ 
                     status: 'approved'
                 }).eq('status', 'pending').eq('tanggal', tanggal);
@@ -310,7 +311,6 @@ window.AppApotekStockOpname = {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
-        // HAPUS 'keterangan' DI SINI
         var query = window.sb.from('stock_opname_requests').update({ 
             status: 'rejected'
         }).eq('status', 'pending').eq('tanggal', tanggal);
