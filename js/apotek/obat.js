@@ -1,12 +1,18 @@
 /**
  * js/apotek/obat.js
- * Master Data Obat, Stock, & Import Excel
+ * Master Data Obat, Stock, & Import Excel — VERSI SUPABASE
  */
 
 window.AppApotekObat = {
     data: [],
     searchQuery: '',
     importData: [],
+
+    destroy: function() {
+        this.data = [];
+        this.searchQuery = '';
+        this.importData = [];
+    },
 
     render: function() {
         var html = '<div class="page-enter max-w-5xl">';
@@ -33,13 +39,18 @@ window.AppApotekObat = {
         return html;
     },
 
+    // ============================================================
+    // FIX #1: .get() → .select('*'), variable `data` → snap.data
+    // ============================================================
     init: function() {
-        window.sb.from('obat').get().then(snap => {
-            AppApotekObat.data = [];
-            (data || []).forEach(doc => { var d = doc; d.id = doc.id; AppApotekObat.data.push(d); });
-            AppApotekObat.data.sort((a, b) => (a.nama_obat || '').localeCompare(b.nama_obat || ''));
+        window.sb.from('obat').select('*').then(function(snap) {
+            AppApotekObat.data = snap.data || [];
+            AppApotekObat.data.sort(function(a, b) { return (a.nama_obat || '').localeCompare(b.nama_obat || ''); });
             AppApotekObat.renderList();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error'); 
+        });
     },
 
     onSearch: function(val) {
@@ -53,10 +64,10 @@ window.AppApotekObat = {
 
         var list = this.data;
         if (this.searchQuery) {
-            list = list.filter(o => 
-                (o.nama_obat && o.nama_obat.toLowerCase().includes(this.searchQuery)) || 
-                (o.kode_obat && o.kode_obat.toLowerCase().includes(this.searchQuery))
-            );
+            list = list.filter(function(o) { 
+                return (o.nama_obat && o.nama_obat.toLowerCase().indexOf(AppApotekObat.searchQuery) !== -1) || 
+                       (o.kode_obat && o.kode_obat.toLowerCase().indexOf(AppApotekObat.searchQuery) !== -1);
+            });
         }
 
         if (list.length === 0) {
@@ -77,7 +88,7 @@ window.AppApotekObat = {
         html += '<th class="px-3 py-3 text-right">Aksi</th>';
         html += '</tr></thead><tbody>';
 
-        list.forEach(o => {
+        list.forEach(function(o) {
             var safeName = (o.nama_obat || '-').replace(/'/g, "\\'");
             var stokClass = (o.stok <= (o.stok_minimum || 0)) ? 'text-red-600 font-bold' : 'text-slate-800 dark:text-white font-medium';
             var expClass = o.expDate && new Date(o.expDate) < new Date() ? 'text-red-500' : 'text-slate-500 dark:text-slate-400';
@@ -99,12 +110,12 @@ window.AppApotekObat = {
         html += '<p class="text-xs text-slate-400 mt-2 text-right">Total: ' + list.length + ' item obat</p>';
         
         container.innerHTML = html;
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
     },
 
     openForm: function(id) {
         var isEdit = !!id;
-        var o = isEdit ? this.data.find(x => x.id === id) : {};
+        var o = isEdit ? this.data.find(function(x) { return x.id === id; }) : {};
         
         var html = '<div class="p-6 max-h-[90vh] overflow-y-auto">';
         html += '<div class="flex items-center justify-between mb-5"><h3 class="text-lg font-semibold text-gray-800 dark:text-white">' + (isEdit ? 'Edit' : 'Tambah') + ' Obat</h3><button onclick="Utils.closeModal()" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><i data-lucide="x" class="w-5 h-5 text-slate-400"></i></button></div>';
@@ -141,14 +152,20 @@ window.AppApotekObat = {
         html += '</form></div>';
 
         Utils.openModal(html);
-        setTimeout(() => {
-            document.getElementById('form-obat').addEventListener('submit', function(e) {
-                e.preventDefault();
-                AppApotekObat.simpan();
-            });
+        setTimeout(function() {
+            var form = document.getElementById('form-obat');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    AppApotekObat.simpan();
+                });
+            }
         }, 100);
     },
 
+    // ============================================================
+    // FIX #2: .update(obj) → .update(obj).eq('id', idField.value)
+    // ============================================================
     simpan: function() {
         var idField = document.getElementById('fo-id');
         var isEdit = !!idField;
@@ -172,26 +189,35 @@ window.AppApotekObat = {
 
         var p;
         if (isEdit) {
-            p = window.sb.from('obat').update(obj);
+            // FIX: Tambahkan .eq('id', ...) agar tidak update semua row
+            p = window.sb.from('obat').update(obj).eq('id', idField.value);
         } else {
             obj.stok = parseFloat(document.getElementById('fo-stok').value) || 0;
             obj.createdAt = new Date().toISOString();
             p = window.sb.from('obat').insert(obj);
         }
 
-        p.then(() => {
+        p.then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Data obat berhasil disimpan!', 'success');
             Utils.closeModal();
             AppApotekObat.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     hapus: function(id, nama) {
         if (!confirm('Hapus obat "' + nama + '"?')) return;
-        window.sb.from('obat').delete().eq('id', id).then(() => {
+        window.sb.from('obat').delete().eq('id', id).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Berhasil dihapus', 'success');
             AppApotekObat.init();
-        }).catch(err => Utils.toast('Gagal: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     // ==========================================
@@ -227,17 +253,19 @@ window.AppApotekObat = {
                     return;
                 }
 
-                AppApotekObat.importData = jsonData.map(row => ({
-                    kode_obat: String(row['Kode Obat'] || '').trim(),
-                    nama_obat: String(row['Nama Obat'] || '').trim(),
-                    kategori: String(row['Kategori'] || '').trim(),
-                    satuan: String(row['Satuan'] || '').trim(),
-                    hpp: parseFloat(row['HPP (Rp)']) || 0,
-                    harga_jual: parseFloat(row['Harga Jual (Rp)']) || 0,
-                    stok: parseInt(row['Stok Awal']) || 0,
-                    stok_minimum: parseInt(row['Stok Minimum']) || 0,
-                    expDate: String(row['Exp Date (YYYY-MM-DD)'] || '').trim()
-                })).filter(row => row.nama_obat !== '' && row.hpp > 0);
+                AppApotekObat.importData = jsonData.map(function(row) {
+                    return {
+                        kode_obat: String(row['Kode Obat'] || '').trim(),
+                        nama_obat: String(row['Nama Obat'] || '').trim(),
+                        kategori: String(row['Kategori'] || '').trim(),
+                        satuan: String(row['Satuan'] || '').trim(),
+                        hpp: parseFloat(row['HPP (Rp)']) || 0,
+                        harga_jual: parseFloat(row['Harga Jual (Rp)']) || 0,
+                        stok: parseInt(row['Stok Awal']) || 0,
+                        stok_minimum: parseInt(row['Stok Minimum']) || 0,
+                        expDate: String(row['Exp Date (YYYY-MM-DD)'] || '').trim()
+                    };
+                }).filter(function(row) { return row.nama_obat !== '' && row.hpp > 0; });
 
                 AppApotekObat.renderImportPreview();
             } catch (err) {
@@ -252,7 +280,7 @@ window.AppApotekObat = {
     renderImportPreview: function() {
         var data = this.importData;
         var area = document.getElementById('import-preview-area');
-        if(!area) return;
+        if (!area) return;
 
         var html = '<div class="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-emerald-300 dark:border-emerald-700 p-5">';
         html += '<div class="flex justify-between items-center mb-4">';
@@ -288,47 +316,42 @@ window.AppApotekObat = {
 
         area.innerHTML = html;
         area.classList.remove('hidden');
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
     },
 
+    // ============================================================
+    // FIX #3: HAPUS SEMUA KODE FIREBASE (db.batch, .doc, .set)
+    // Ganti dengan Supabase .insert() yang mendukung bulk array
+    // ============================================================
     executeImport: function() {
         if (!confirm('Import ' + this.importData.length + ' data obat ke database?')) return;
 
-        var dataToImport = this.importData;
-        var batchSize = 400;
-        var batches = [];
-        
-        for (var i = 0; i < dataToImport.length; i += batchSize) {
-            var chunk = dataToImport.slice(i, i + batchSize);
-            var batch = db.batch();
-            chunk.forEach(function(obat, chunkIdx) {
-                // Gunakan Kode Obat sebagai ID Dokumen (biar tidak duplikat).
-                // Fallback ID memakai counter unik (i + chunkIdx) agar tidak bentrok dalam ms yang sama.
-                var docId = obat.kode_obat ? obat.kode_obat.replace(/\s+/g, '_') : ('OB-' + Date.now() + '-' + i + '-' + chunkIdx);
-                var docRef = window.sb.from('obat').doc(docId);
-                batch.set(docRef, {
-                    kode_obat: obat.kode_obat,
-                    nama_obat: obat.nama_obat,
-                    kategori: obat.kategori,
-                    satuan: obat.satuan,
-                    hpp: obat.hpp,
-                    harga_jual: obat.harga_jual,
-                    stok: obat.stok,
-                    stok_minimum: obat.stok_minimum,
-                    expDate: obat.expDate,
-                    updatedAt: new Date().toISOString(),
-                    createdAt: new Date().toISOString()
-                }, { merge: true }); 
-            });
-            batches.push(batch.commit());
-        }
+        var dataToImport = this.importData.map(function(obat) {
+            return {
+                kode_obat: obat.kode_obat,
+                nama_obat: obat.nama_obat,
+                kategori: obat.kategori,
+                satuan: obat.satuan,
+                hpp: obat.hpp,
+                harga_jual: obat.harga_jual,
+                stok: obat.stok,
+                stok_minimum: obat.stok_minimum,
+                expDate: obat.expDate,
+                updatedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+            };
+        });
 
         Utils.toast('Sedang memproses...', 'info');
-        Promise.all(batches).then(() => {
+
+        // Supabase: cukup .insert(array) untuk bulk insert
+        window.sb.from('obat').insert(dataToImport).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Berhasil mengimport ' + dataToImport.length + ' data obat!', 'success');
             document.getElementById('import-preview-area').classList.add('hidden');
             AppApotekObat.init();
-        }).catch(err => {
+        }).catch(function(err) {
+            console.error(err);
             Utils.toast('Gagal mengimport: ' + err.message, 'error');
         });
     }
