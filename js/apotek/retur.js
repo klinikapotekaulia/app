@@ -1,25 +1,6 @@
 /**
  * js/apotek/retur.js
- * Retur Obat ke Supplier
- *
- * FITUR:
- * - Catat pengembalian obat ke supplier (kadaluarsa, rusak, salah kirim)
- * - Pilih dari master obat, isi qty & alasan retur
- * - Update stok otomatis (dikurangi) via FieldValue.increment
- * - Riwayat retur dengan filter bulan
- * - Status retur: menunggu_konfirmasi → dikonfirmasi → selesai
- *
- * FIRESTORE COLLECTIONS:
- *   - retur   { tanggal, supplier, obat_id, nama_obat, kode_obat, qty, satuan,
- *               hargaBeli, totalNilai, alasan, status, catatanAdmin,
- *               createdAt, inputOleh }
- *   - obat    (stok dikurangi saat retur dikonfirmasi oleh admin)
- *
- * CARA PASANG:
- *   1. Tambahkan file ini ke daftar cache sw.js
- *   2. Tambahkan menu di app.js → menuStructure.apotek:
- *        { id: 'retur', label: 'Retur Supplier', icon: 'package-open', module: 'apotek/retur' }
- *   3. Akses: kasir apotek bisa buat pengajuan, admin bisa konfirmasi/tolak
+ * Retur Obat ke Supplier — VERSI SUPABASE FIX
  */
 
 window.AppApotekRetur = {
@@ -62,18 +43,16 @@ window.AppApotekRetur = {
         var bulanEl = document.getElementById('retur-filter-bulan');
         var bulan   = bulanEl ? bulanEl.value : new Date().toISOString().slice(0, 7);
         var start   = bulan + '-01';
-        var end     = bulan + '-31';
+        var end     = bulan + '-31'; // Aman untuk filter tanggal
 
+        // FIX: Hapus .get(), gunakan .select('*'), akses via res.data
         Promise.all([
-            window.sb.from('obat').get(),
-            window.sb.from('retur').gte('tanggal', start).lte('tanggal', end)
-              .order('tanggal', { ascending: false }).get()
+            window.sb.from('obat').select('*'),
+            window.sb.from('retur').select('*').gte('tanggal', start).lte('tanggal', end)
+              .order('tanggal', { ascending: false })
         ]).then(function(results) {
-            self.masterObat = [];
-            results[0].forEach(function(doc) { var d = doc; d.id = doc.id; self.masterObat.push(d); });
-
-            self.data = [];
-            results[1].forEach(function(doc) { var d = doc; d.id = doc.id; self.data.push(d); });
+            self.masterObat = results[0].data || [];
+            self.data = results[1].data || [];
 
             self.renderList();
         }).catch(function(err) {
@@ -146,7 +125,13 @@ window.AppApotekRetur = {
         });
 
         var today = new Date().toISOString().split('T')[0];
-        var html = '<div class="grid grid-cols-2 gap-4">';
+        
+        // FIX: Bangun HTML lengkap dengan judul dan tombol (sesuai Utils.openModal yang hanya terima 1 parameter)
+        var html = '<div class="p-6">';
+        html += '<div class="flex items-center justify-between mb-5"><h3 class="text-lg font-semibold text-gray-800 dark:text-white">Buat Retur Baru</h3><button onclick="Utils.closeModal()" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><i data-lucide="x" class="w-5 h-5 text-slate-400"></i></button></div>';
+        
+        html += '<form id="form-retur" class="space-y-4">';
+        html += '<div class="grid grid-cols-2 gap-4">';
         html += '<div class="col-span-2"><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tanggal Retur *</label><input type="date" id="retur-tgl" value="' + today + '" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
         html += '<div class="col-span-2"><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier *</label><input type="text" id="retur-supplier" placeholder="Nama supplier / PBF" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm"></div>';
         html += '<div class="col-span-2"><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Obat *</label><select id="retur-obat" onchange="AppApotekRetur.onObatChange(this)" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm">' + obatOptions + '</select></div>';
@@ -164,7 +149,24 @@ window.AppApotekRetur = {
         html += '<p id="retur-total" class="text-xl font-bold text-primary-600 dark:text-primary-400">Rp 0</p></div>';
         html += '</div>';
 
-        Utils.openModal('Buat Retur Baru', html, 'AppApotekRetur.simpanRetur()');
+        html += '<div class="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">';
+        html += '<button type="button" onclick="Utils.closeModal()" class="px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Batal</button>';
+        html += '<button type="submit" class="px-6 py-2.5 text-sm bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg">Simpan Retur</button>';
+        html += '</div>';
+        
+        html += '</form></div>';
+
+        Utils.openModal(html);
+        
+        setTimeout(function() {
+            var form = document.getElementById('form-retur');
+            if(form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    AppApotekRetur.simpanRetur();
+                });
+            }
+        }, 100);
     },
 
     onObatChange: function(sel) {
@@ -218,60 +220,96 @@ window.AppApotekRetur = {
             createdAt:  new Date().toISOString()
         };
 
-        window.sb.from('retur').insert(obj).then(function() {
+        window.sb.from('retur').insert(obj).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Pengajuan retur berhasil dibuat! Menunggu konfirmasi admin.', 'success');
             Utils.closeModal();
             AppApotekRetur.init();
         }).catch(function(err) {
             Utils.toast('Gagal: ' + err.message, 'error');
         });
-        // CATATAN: stok baru dikurangi saat admin konfirmasi, bukan saat pengajuan dibuat.
     },
 
     // ===== KONFIRMASI (Admin) =====
     konfirmasi: function(id) {
         if (!confirm('Konfirmasi retur ini? Stok obat akan langsung dikurangi.')) return;
 
+        var self = this;
         var retur = this.data.find(function(r) { return r.id === id; });
         if (!retur) return;
 
-        var batch = db.batch();
-        var returRef = window.sb.from('retur').doc(id);
-        var obatRef  = window.sb.from('obat').doc(retur.obat_id);
+        // FIX HAPUS db.batch(): Gunakan Fetch lalu Update supabase
+        // 1. Ambil stok saat ini, kurangi, lalu update
+        window.sb.from('obat').select('stok').eq('id', retur.obat_id).single()
+        .then(function(res) {
+            var currentStok = res.data ? (res.data.stok || 0) : 0;
+            var newStok = currentStok - (retur.qty || 0);
+            
+            return window.sb.from('obat').update({ 
+                stok: newStok, 
+                updated_at: new Date().toISOString() 
+            }).eq('id', retur.obat_id);
+        })
+        .then(function(res) {
+            if (res.error) throw res.error;
 
-        batch.update(returRef, {
-            status: 'dikonfirmasi',
-            dikonfirmasiOleh: window.currentUserName || 'Admin',
-            dikonfirmasiAt: new Date().toISOString()
-        });
-        // FIX: pakai increment negatif agar tidak race condition dengan transaksi lain
-        batch.update(obatRef, {
-            stok: /* TODO_INCREMENT(-(retur.qty || 0) */),
-            updatedAt: new Date().toISOString()
-        });
-
-        batch.commit().then(function() {
+            // 2. Update status retur
+            return window.sb.from('retur').update({
+                status: 'dikonfirmasi',
+                dikonfirmasiOleh: window.currentUserName || 'Admin',
+                dikonfirmasiAt: new Date().toISOString()
+            }).eq('id', id);
+        })
+        .then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Retur dikonfirmasi. Stok telah dikurangi ' + retur.qty + ' ' + (retur.satuan || '') + '.', 'success');
-            AppApotekRetur.init();
-        }).catch(function(err) {
+            self.init();
+        })
+        .catch(function(err) {
+            console.error(err);
             Utils.toast('Gagal konfirmasi: ' + err.message, 'error');
         });
     },
 
     // ===== TOLAK (Admin) =====
     tolak: function(id) {
-        var catatan = prompt('Masukkan alasan penolakan:');
-        if (catatan === null) return; // user batal
+        // FIX: Ganti prompt() jadi custom Modal agar selaras dengan UI lainnya
+        var html = '<div class="p-6 text-center">';
+        html += '<i data-lucide="alert-triangle" class="w-12 h-12 text-red-400 mx-auto mb-3"></i>';
+        html += '<h3 class="text-lg font-bold text-slate-800 dark:text-white mb-2">Tolak Retur</h3>';
+        html += '<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Masukkan alasan penolakan:</p>';
+        html += '<textarea id="retur-alasan-tolak" rows="3" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm mb-4 text-left" placeholder="Tulis alasan di sini..."></textarea>';
+        html += '<div class="flex gap-3 justify-center">';
+        html += '<button onclick="Utils.closeModal()" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm hover:bg-slate-100 dark:hover:bg-slate-700">Batal</button>';
+        html += '<button onclick="AppApotekRetur._doTolak(\'' + id + '\')" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700">Ya, Tolak</button>';
+        html += '</div></div>';
+        
+        Utils.openModal(html);
+        if(window.lucide) lucide.createIcons();
+    },
+
+    _doTolak: function(id) {
+        var alasan = document.getElementById('retur-alasan-tolak') ? document.getElementById('retur-alasan-tolak').value.trim() : '';
+        if (!alasan) {
+            Utils.toast('Alasan penolakan wajib diisi.', 'error');
+            return;
+        }
+        
+        Utils.closeModal();
+        
+        // FIX: TAMBAHKAN .eq('id', id) SEBELUM .then()
         window.sb.from('retur').update({
             status: 'ditolak',
-            catatanAdmin: catatan || '-',
+            catatanAdmin: alasan,
             ditolakOleh: window.currentUserName || 'Admin',
             ditolakAt: new Date().toISOString()
-        }).then(function() {
+        }).eq('id', id).then(function(res) {
+            if (res.error) throw res.error;
             Utils.toast('Pengajuan retur ditolak.', 'success');
             AppApotekRetur.init();
-        }).catch(function(err) {
-            Utils.toast('Gagal: ' + err.message, 'error');
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
         });
     },
 
