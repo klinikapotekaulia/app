@@ -271,6 +271,8 @@ window.navigateTo = function (modulePath, title) {
         try { _currentModule.destroy(); } catch (e) { console.warn('Cleanup error:', e); }
     }
     _currentModule = null;
+    sessionStorage.setItem('lastModule', modulePath);
+    sessionStorage.setItem('lastTitle', title || '');
 
     // Update judul halaman
     document.getElementById('page-title').textContent = title || '';
@@ -356,7 +358,15 @@ function startApp(userRole, userName) {
     if (elRole)   elRole.textContent   = roleSafe.charAt(0).toUpperCase() + roleSafe.slice(1);
     if (elAvatar) elAvatar.textContent = (nameSafe.charAt(0) || '?').toUpperCase();
     renderSidebar(userRole);
-    navigateTo('dashboard', 'Dashboard');
+
+    var savedModule = sessionStorage.getItem('lastModule');
+    var savedTitle = sessionStorage.getItem('lastTitle');
+    if (savedModule && savedModule !== 'dashboard') {
+        navigateTo(savedModule, savedTitle);
+        sessionStorage.removeItem('lastModule'); // Hapus supaya normal lagi
+    } else {
+        navigateTo('dashboard', 'Dashboard');
+    }
     
     // 👉 TAMBAHKAN BARIS INI DI SINI:
     window.startRealtimeListener(); 
