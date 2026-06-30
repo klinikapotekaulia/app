@@ -1,7 +1,7 @@
 /**
  * js/keuangan/payroll.js
  * Proses Payroll (Gaji & Pembagian Hasil) Bulanan
- * Logic akurat: Pecahan Jasa Resep, Tuslah, Omzet, Uang Makan, Transport, Racik.
+ * VERSI SUPABASE (FINAL)
  */
 
 window.AppKeuanganPayroll = {
@@ -12,11 +12,20 @@ window.AppKeuanganPayroll = {
     configPembagian: null,
     kalkulasiGaji: [],
 
+    destroy: function() {
+        this.dataKaryawan = [];
+        this.dataTransaksi = [];
+        this.dataAbsensi = [];
+        this.configGaji = null;
+        this.configPembagian = null;
+        this.kalkulasiGaji = [];
+    },
+
     render: function() {
         var d = new Date();
         var defaultMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 
-        var html = '<div class="page-enter max-w-7xl">'; // Diperlebar biar muat semua kolom
+        var html = '<div class="page-enter max-w-7xl">';
         html += '  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">';
         html += '    <div>';
         html += '      <h2 class="text-xl font-bold text-gray-800 dark:text-white">Payroll Karyawan</h2>';
@@ -27,7 +36,6 @@ window.AppKeuanganPayroll = {
         html += '      <button onclick="AppKeuanganPayroll.init()" class="bg-primary-600 text-white text-sm px-4 py-1.5 rounded-md font-medium">Hitung</button>';
         html += '    </div>';
         html += '  </div>';
-        
         html += '  <div id="payroll-content"><div class="flex justify-center py-20"><div class="spinner"></div></div></div>';
         html += '</div>';
         return html;
@@ -48,24 +56,32 @@ window.AppKeuanganPayroll = {
         var startDate = bulan + '-01';
         var endDate = bulan + '-31';
 
-        var pKary = window.sb.from('karyawan').eq('status', 'aktif').get();
-        var pTrx = window.sb.from('transaksi').gte('tanggal', startDate).lte('tanggal', endDate).get();
-        var pAbsen = window.sb.from('absensi').gte('tanggal', startDate).lte('tanggal', endDate).get();
-        var pCfgGaji = window.sb.from('pengaturan_gaji').select('*').eq('id', 'global').single();
-        var pCfgBagi = window.sb.from('pengaturan_pembagian').select('*').eq('id', 'global').single();
+        // FIX #1: Hapus .get(), ganti dengan .select('*')
+        Promise.all([
+            window.sb.from('karyawan').select('*').eq('status', 'aktif'),
+            window.sb.from('transaksi').select('*').gte('tanggal', startDate).lte('tanggal', endDate),
+            window.sb.from('absensi').select('*').gte('tanggal', startDate).lte('tanggal', endDate),
+            window.sb.from('pengaturan_gaji').select('*').eq('id', 'global').single(),
+            window.sb.from('pengaturan_pembagian').select('skema').eq('id', 'global').single()
+        ]).then(function(results) {
+            // FIX #2: Supabase hasilnya ada di .data
+            self.dataKaryawan = results[0].data || [];
+            self.dataTransaksi = results[1].data || [];
+            self.dataAbsensi = results[2].data || [];
 
-        Promise.all([pKary, pTrx, pAbsen, pCfgGaji, pCfgBagi]).then(function(results) {
-            self.dataKaryawan = [];
-            results[0].forEach(function(doc) { var d = doc; d.id = doc.id; self.dataKaryawan.push(d); });
+            // FIX #3: Pengaturan Gaji (cek apakah pakai kolom JSONB 'skema' atau langsung)
+            if (results[3].data) {
+                self.configGaji = results[3].data.skema || results[3].data || { apotek: [], klinik: [] };
+            } else {
+                self.configGaji = { apotek: [], klinik: [] };
+            }
 
-            self.dataTransaksi = [];
-            results[1].forEach(function(doc) { var d = doc; d.id = doc.id; self.dataTransaksi.push(d); });
-
-            self.dataAbsensi = [];
-            results[2].forEach(function(doc) { self.dataAbsensi.push(doc); });
-
-            self.configGaji = results[3].exists ? results[3].data() : { apotek: [], klinik: [] };
-            self.configPembagian = results[4].exists ? results[4].data() : {};
+            // FIX #4: Pengaturan Pembagian (diambil dari kolom 'skema')
+            if (results[4].data && results[4].data.skema) {
+                self.configPembagian = results[4].data.skema;
+            } else {
+                self.configPembagian = {};
+            }
 
             self.hitungPayroll();
         }).catch(function(err) {
@@ -74,11 +90,10 @@ window.AppKeuanganPayroll = {
         });
     },
 
-        hitungPayroll: function() {
+    hitungPayroll: function() {
         var self = this;
         this.kalkulasiGaji = [];
 
-        // 1. KALKULASI GLOBAL BULAN INI
         var rekapDokter = {}; 
         var totalLabaObat = 0; 
         var totalPembulatan = 0; 
@@ -90,18 +105,15 @@ window.AppKeuanganPayroll = {
         var nilaiRacikConfig = (cfg && cfg.racikObat) ? (cfg.racikObat.nilai || 0) : 0;
 
         this.dataTransaksi.forEach(function(t) {
-            // Hitung Laba Obat & Pembulatan
             var omzetObat = t.items ? t.items.reduce(function(s, i) { return s + (i.jumlah * i.harga_jual); }, 0) : 0;
             var hppObat = t.items ? t.items.reduce(function(s, i) { return s + (i.jumlah * (i.hargaBeli || 0)); }, 0) : 0;
             totalLabaObat += (omzetObat - hppObat);
             totalPembulatan += (t.pembulatan || 0);
 
-            // Hitung Racik
             if (t.racikan_items && t.racikan_items.length > 0) {
                 totalNilaiRacik += (t.racikan_items.length * nilaiRacikConfig);
             }
 
-            // Rekap Jasa Resep Dokter (Klinik & Luar)
             if (t.tipe === 'resep_klinik' && t.dokter_id) {
                 if (!rekapDokter[t.dokter_id]) rekapDokter[t.dokter_id] = { jmlResepKlinik: 0, jasaResepLuar: 0 };
                 rekapDokter[t.dokter_id].jmlResepKlinik += 1;
@@ -110,7 +122,6 @@ window.AppKeuanganPayroll = {
                 rekapDokter[t.dokter_id].jasaResepLuar += (t.jasa_resep || 0);
             }
 
-            // Hitung Tuslah (FIX: Dari Laba / Harga Jual - Modal)
             if (t.tindakan_items && t.tindakan_items.length > 0) {
                 t.tindakan_items.forEach(function(tin) {
                     var labaTindakan = (tin.harga_jual || 0) - (tin.modal || 0);
@@ -120,24 +131,19 @@ window.AppKeuanganPayroll = {
             }
         });
 
-        // 2. PROSES PER KARYAWAN
         this.dataKaryawan.forEach(function(k) {
             var depKey = (k.departemen || '').toLowerCase();
             
-            // Gaji Pokok
             var gaji_pokok = 0;
             var cfgGajiDep = self.configGaji[depKey] || [];
             var gajiCfg = cfgGajiDep.find(function(g) { return g.karyawan_id === k.id; });
             if (gajiCfg) gaji_pokok = gajiCfg.gaji_pokok || 0;
 
-            // Hari Kerja
-            var hadir = self.dataAbsensi.filter(function(a) { return a.user_id === k.user_id || a.nama_karyawan === k.nama; }).length;
+            var hadir = self.dataAbsensi.filter(function(a) { return a.user_id === k.user_id || a.namanya === k.nama; }).length;
 
-            // Jasa Medis (JM) & Jasa Dokter (JD) - Hanya untuk Dokter Klinik
             var jasaMedis = 0, jasaDokter = 0, jasaResepLuar = 0;
             if (rekapDokter[k.id]) {
-                jasaResepLuar = rekapDokter[k.id].jasaResepLuar || 0; // Dapat utuh dari resep luar
-                // FIX: guard supaya tidak crash bila cfg.resep_klinik belum di-set.
+                jasaResepLuar = rekapDokter[k.id].jasaResepLuar || 0;
                 if (cfg.resep_klinik && Array.isArray(cfg.resep_klinik)) {
                     var docConfig = cfg.resep_klinik.find(function(dc) { return dc.dokter_id === k.id; });
                     if (docConfig && rekapDokter[k.id].jmlResepKlinik > 0) {
@@ -147,7 +153,6 @@ window.AppKeuanganPayroll = {
                 }
             }
 
-            // Bagian Pool Resep (Klinik & Apotek)
             var bagPoolKlinik = 0, bagPoolApotek = 0;
             if (cfg.resep_klinik) {
                 cfg.resep_klinik.forEach(function(dc) {
@@ -162,7 +167,6 @@ window.AppKeuanganPayroll = {
                 });
             }
 
-            // Bagian Tuslah/Tindakan (FIX: Sudah menggunakan Laba Tindakan)
             var bagTuslah = 0;
             var depTindakanKey = (depKey === 'klinik') ? 'tindakanKlinik' : 'tindakanApotek';
             var slotsTindakan = cfg[depTindakanKey] || [];
@@ -172,7 +176,6 @@ window.AppKeuanganPayroll = {
                 bagTuslah = (totalTuslahDep * mySlotTindakan.persen) / 100;
             }
 
-            // Tunjangan Omzet
             var bagOmzet = 0;
             if (cfg.tunjanganOmzet && cfg.tunjanganOmzet.persen > 0) {
                 var poolOmzet = (totalLabaObat * cfg.tunjanganOmzet.persen) / 100;
@@ -180,21 +183,18 @@ window.AppKeuanganPayroll = {
                 if (mySlotOmzet) bagOmzet = (poolOmzet * mySlotOmzet.persen) / 100;
             }
 
-            // Uang Makan
             var bagUM = 0;
             if (cfg.uangMakan) {
                 var mySlotUM = cfg.uangMakan.slot.find(function(s) { return s.karyawan_id === k.id; });
                 if (mySlotUM) bagUM = (totalPembulatan * mySlotUM.persen) / 100;
             }
 
-            // Transport
             var bagTransport = 0;
             if (cfg.transport) {
                 var mySlotTr = cfg.transport.slot.find(function(s) { return s.karyawan_id === k.id; });
                 if (mySlotTr) bagTransport = ((cfg.transport.total || 0) * mySlotTr.persen) / 100;
             }
 
-            // Racik Obat
             var bagRacik = 0;
             if (cfg.racikObat) {
                 var mySlotRacik = cfg.racikObat.slot.find(function(s) { return s.karyawan_id === k.id; });
@@ -260,7 +260,6 @@ window.AppKeuanganPayroll = {
                 html += '<td class="px-2 py-2 text-right text-sky-600">' + Utils.formatRupiah(k.bagTransport) + '</td>';
                 html += '<td class="px-2 py-2 text-right text-indigo-600">' + Utils.formatRupiah(k.bagRacik) + '</td>';
                 
-                // Manual Inputs
                 html += '<td class="px-1 py-1 text-right"><input type="number" id="tunjangan-' + idx + '" value="0" oninput="AppKeuanganPayroll.updateTotal(' + idx + ')" class="w-20 px-1 py-1 border border-slate-300 dark:bg-slate-700 dark:text-white rounded text-xs text-right"></td>';
                 html += '<td class="px-1 py-1 text-right"><input type="number" id="kasbon-' + idx + '" value="0" oninput="AppKeuanganPayroll.updateTotal(' + idx + ')" class="w-20 px-1 py-1 border border-red-300 dark:bg-slate-700 dark:text-white rounded text-xs text-right"></td>';
                 html += '<td class="px-1 py-1 text-right"><input type="number" id="wisata-' + idx + '" value="0" oninput="AppKeuanganPayroll.updateTotal(' + idx + ')" class="w-20 px-1 py-1 border border-red-300 dark:bg-slate-700 dark:text-white rounded text-xs text-right"></td>';
@@ -278,7 +277,7 @@ window.AppKeuanganPayroll = {
         html += '</div>';
 
         container.innerHTML = html;
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
     },
 
     updateTotal: function(idx) {
@@ -359,48 +358,49 @@ window.AppKeuanganPayroll = {
 
         var bulan = document.getElementById('filter-bulan-payroll').value;
         var self = this;
-        // FIX: cek duplikat payroll bulanan terlebih dahulu agar gaji tidak dobel.
-        window.sb.from('payroll_history').eq('bulan', bulan).limit(1).get().then(function(snap) {
-            if (!snap.empty) {
+
+        // FIX #5: Cek duplikat menggunakan sintaks Supabase
+        window.sb.from('payroll_history').select('id').eq('bulan', bulan).limit(1).then(function(snap) {
+            if (snap.data && snap.data.length > 0) {
                 Utils.toast('Payroll bulan ' + bulan + ' sudah pernah disimpan!', 'error');
                 return;
             }
-            var batch = db.batch();
-            self.kalkulasiGaji.forEach(function(k) {
-            var ref = window.sb.from('payroll_history').doc();
-            batch.set(ref, {
-                bulan: bulan,
-                karyawan_id: k.karyawan_id,
-                nama_karyawan: k.nama,
-                departemen: k.departemen,
-                hariKerja: k.hariKerja,
-                gaji_pokok: k.gaji_pokok,
-                jasaMedis: k.jasaMedis,
-                jasaDokter: k.jasaDokter,
-                bagPoolKlinik: k.bagPoolKlinik,
-                bagPoolApotek: k.bagPoolApotek,
-                bagTuslah: k.bagTuslah,
-                bagOmzet: k.bagOmzet,
-                bagUM: k.bagUM,
-                bagTransport: k.bagTransport,
-                bagRacik: k.bagRacik,
-                tunjanganLain: k.tunjanganLain,
-                potKasbon: k.potKasbon,
-                potWisata: k.potWisata,
-                total_gaji: k.total_gaji,
-                status: 'paid',
-                diprosesOleh: window.currentUserName || 'Keuangan',
-                createdAt: new Date().toISOString()
-            });
-        });
 
-            batch.commit().then(function() {
-                Utils.toast('Payroll berhasil disimpan & dikunci!', 'success');
-            }).catch(function(err) {
-                Utils.toast('Gagal simpan payroll: ' + err.message, 'error');
+            // FIX #6: HAPUS db.batch(), gunakan Supabase bulk .insert()
+            var bulkData = self.kalkulasiGaji.map(function(k) {
+                return {
+                    bulan: bulan,
+                    karyawan_id: k.karyawan_id,
+                    nama_karyawan: k.nama,
+                    departemen: k.departemen,
+                    hariKerja: k.hariKerja,
+                    gaji_pokok: k.gaji_pokok,
+                    jasaMedis: k.jasaMedis,
+                    jasaDokter: k.jasaDokter,
+                    bagPoolKlinik: k.bagPoolKlinik,
+                    bagPoolApotek: k.bagPoolApotek,
+                    bagTuslah: k.bagTuslah,
+                    bagOmzet: k.bagOmzet,
+                    bagUM: k.bagUM,
+                    bagTransport: k.bagTransport,
+                    bagRacik: k.bagRacik,
+                    tunjanganLain: k.tunjanganLain,
+                    potKasbon: k.potKasbon,
+                    potWisata: k.potWisata,
+                    total_gaji: k.total_gaji,
+                    status: 'paid',
+                    diprosesOleh: window.currentUserName || 'Keuangan',
+                    created_at: new Date().toISOString()
+                };
             });
+
+            return window.sb.from('payroll_history').insert(bulkData);
+        }).then(function(res) {
+            if (res && res.error) throw res.error;
+            if (res) Utils.toast('Payroll berhasil disimpan & dikunci!', 'success');
         }).catch(function(err) {
-            Utils.toast('Gagal memeriksa payroll: ' + err.message, 'error');
+            console.error(err);
+            Utils.toast('Gagal simpan payroll: ' + err.message, 'error');
         });
     }
 };
