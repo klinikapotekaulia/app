@@ -28,7 +28,7 @@ window.AppKlinikAntrian = {
         var today = new Date().toISOString().split('T')[0]; 
         
         // FIX: Hapus .get(), Supabase tidak punya method itu
-        var pAntrian = window.sb.from('antrian').select('*').eq('tanggal', today).order('created_at', { ascending: true });
+        var pAntrian = window.sb.from('antrian').select('*').eq('tanggal', today).neq('status', 'batal').order('created_at', { ascending: true });
         var pPasien = window.sb.from('pasien').select('*').order('nama', { ascending: true });
         var pDokter = window.sb.from('karyawan').select('*').eq('departemen', 'Klinik').eq('status', 'aktif');
 
