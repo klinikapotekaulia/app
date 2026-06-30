@@ -129,7 +129,7 @@ window.AppApotekStockOpname = {
 
         this.data.forEach(function(o) {
             if (o.stok_fisik !== '' && !isNaN(o.stok_fisik) && o.stok_fisik != (o.stok || 0)) {
-                // SESUAIKAN DENGAN STRUKTUR KOLOM TABEL ANDA
+                // HAPUS 'keterangan' KARENA KOLOM TERSEBUT TIDAK ADA DI DATABASE
                 itemsToSubmit.push({
                     tanggal: new Date().toISOString().split('T')[0],
                     obat_id: o.id,
@@ -137,9 +137,8 @@ window.AppApotekStockOpname = {
                     stok_sistem: o.stok || 0,
                     stok_fisik: o.stok_fisik,
                     selisih: o.stok_fisik - (o.stok || 0),
-                    keterangan: 'Pengajuan Opname',
                     user_id: window.currentUserId || null,
-                    status: 'pending' // PASTIKAN KOLOM INI SUDAH DITAMBAHKAN KE DB
+                    status: 'pending'
                 });
             }
         });
@@ -148,7 +147,6 @@ window.AppApotekStockOpname = {
         if (!confirm('Ajukan ' + itemsToSubmit.length + ' perubahan stok ke Admin/Keuangan?')) return;
 
         Utils.toast('Mengirim pengajuan...', 'info');
-        // Karena format flat, kita lakukan bulk insert
         window.sb.from('stock_opname_requests').insert(itemsToSubmit).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Pengajuan opname terkirim! Menunggu approval.', 'success');
@@ -162,7 +160,6 @@ window.AppApotekStockOpname = {
     // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        // Join ke tabel users untuk mendapatkan nama yang mengajukan
         window.sb.from('stock_opname_requests').select('*, users(nama)').eq('status', 'pending').order('created_at', { ascending: false }).then(function(snap) {
             self.requests = snap.data || [];
             self.renderApprovalList();
@@ -179,10 +176,8 @@ window.AppApotekStockOpname = {
             return;
         }
 
-        // KELOMPOKKAN DATA BERDASARKAN TANGGAL & USER (karena format tabel flat)
         var grouped = {};
         this.requests.forEach(function(req) {
-            // Fallback nama user jika relasi gagal
             var namaUser = (req.users && req.users.nama) ? req.users.nama : 'Apoteker';
             var key = req.tanggal + '_' + (req.user_id || 'unknown') + '_' + namaUser;
             
@@ -198,7 +193,6 @@ window.AppApotekStockOpname = {
         });
 
         var html = '<div class="space-y-4">';
-        
         var keys = Object.keys(grouped);
         for (var k = 0; k < keys.length; k++) {
             var group = grouped[keys[k]];
@@ -206,8 +200,8 @@ window.AppApotekStockOpname = {
             
             var totalRugi = 0, totalUntung = 0;
             group.items.forEach(function(it) {
-                if(it.selisih < 0) totalRugi += Math.abs(it.selisih * (it.hpp || 0)); // Karena flat, HPP diambil dari join atau default 0
-                else totalUntung += it.selisih * (it.hpp || 0);
+                if(it.selisih < 0) totalRugi += Math.abs(it.selisih);
+                else totalUntung += it.selisih;
             });
 
             html += '<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5">';
@@ -218,11 +212,10 @@ window.AppApotekStockOpname = {
             
             html += '<div class="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg mb-3 text-xs space-y-1">';
             html += '<div class="flex justify-between"><span class="text-slate-500">Total Item Diajukan:</span><span class="font-bold">' + group.items.length + ' Obat</span></div>';
-            html += '<div class="flex justify-between"><span class="text-slate-500">Estimasi Nilai Kurang (Rugi):</span><span class="font-bold text-red-600">' + Utils.formatRupiah(totalRugi) + '</span></div>';
-            html += '<div class="flex justify-between"><span class="text-slate-500">Estimasi Nilai Lebih (Untung):</span><span class="font-bold text-green-600">' + Utils.formatRupiah(totalUntung) + '</span></div>';
+            html += '<div class="flex justify-between"><span class="text-slate-500">Total Stok Kurang:</span><span class="font-bold text-red-600">' + totalRugi + ' Unit</span></div>';
+            html += '<div class="flex justify-between"><span class="text-slate-500">Total Stok Lebih:</span><span class="font-bold text-green-600">' + totalUntung + ' Unit</span></div>';
             html += '</div>';
 
-            // Kita kirim ID item pertama sebagai representasi grup untuk diambil datanya nanti
             var firstItemId = group.items[0].id; 
             html += '<div class="flex gap-2">';
             html += '<button onclick="AppApotekStockOpname.lihatDetail(\'' + firstItemId + '\', \'' + group.tanggal + '\', \'' + (group.items[0].user_id || '') + '\')" class="flex-1 px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium">Lihat Detail</button>';
@@ -231,14 +224,12 @@ window.AppApotekStockOpname = {
             html += '</div>';
             html += '</div>';
         }
-        
         html += '</div>';
         container.innerHTML = html;
         if(window.lucide) lucide.createIcons();
     },
 
     lihatDetail: function(firstItemId, tanggal, userId) {
-        // Ambil ulang data spesifik berdasarkan grup ini
         var query = window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').eq('tanggal', tanggal);
         if(userId) query = query.eq('user_id', userId);
 
@@ -271,7 +262,6 @@ window.AppApotekStockOpname = {
 
         Utils.toast('Memproses update stok...', 'info');
 
-        // 1. Ambil data pending dari grup ini
         var query = window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').eq('tanggal', tanggal);
         if(userId) query = query.eq('user_id', userId);
 
@@ -279,12 +269,11 @@ window.AppApotekStockOpname = {
             var items = snap.data || [];
             if (items.length === 0) throw new Error('Data tidak ditemukan');
 
-            // 2. Kumpulkan promise untuk update stok master obat
             var updateStokPromises = items.map(function(it) {
                 return window.sb.from('obat').select('stok').eq('id', it.obat_id).single()
                     .then(function(res) {
                         var currentStok = res.data ? (res.data.stok || 0) : 0;
-                        var newStok = currentStok + it.selisih; // Otomatis tambah/kurang berdasarkan selisih
+                        var newStok = currentStok + it.selisih;
                         
                         return window.sb.from('obat').update({ 
                             stok: newStok, 
@@ -293,15 +282,13 @@ window.AppApotekStockOpname = {
                     });
             });
 
-            // Jalankan semua update stok paralel
             return Promise.all(updateStokPromises).then(function(results) {
                 var hasError = results.some(function(r) { return r.error; });
                 if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
 
-                // 3. Update status semua item di grup ini jadi 'approved'
+                // HAPUS 'keterangan' DI SINI
                 var updateStatusQuery = window.sb.from('stock_opname_requests').update({ 
-                    status: 'approved',
-                    keterangan: 'Disetujui oleh ' + (window.currentUserName || 'Admin')
+                    status: 'approved'
                 }).eq('status', 'pending').eq('tanggal', tanggal);
                 
                 if(userId) updateStatusQuery = updateStatusQuery.eq('user_id', userId);
@@ -323,9 +310,9 @@ window.AppApotekStockOpname = {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
+        // HAPUS 'keterangan' DI SINI
         var query = window.sb.from('stock_opname_requests').update({ 
-            status: 'rejected',
-            keterangan: 'Ditolak oleh ' + (window.currentUserName || 'Admin')
+            status: 'rejected'
         }).eq('status', 'pending').eq('tanggal', tanggal);
         
         if(userId) query = query.eq('user_id', userId);
