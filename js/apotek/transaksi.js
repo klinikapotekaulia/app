@@ -42,10 +42,14 @@ window.AppApotekTransaksi = {
         var today = new Date().toISOString().split('T')[0];
 
         // FIX #1: Hapus .get(), ganti dengan .select('*')
+            init: function() {
+        var self = this;
+        var today = new Date().toISOString().split('T')[0];
+
         Promise.all([
             window.sb.from('obat').select('*'),
             window.sb.from('pengaturan_pembagian').select('*').eq('id', 'global').single(),
-            window.sb.from('rekam_medis').select('*').eq('status', 'selesai'),
+            window.sb.from('rekam_medis').select('*'), // <-- HAPUS .eq('status', 'selesai') DI SINI
             window.sb.from('antrian').select('*').eq('tanggal', today),
             window.sb.from('master_tindakan').select('*').eq('aktif', true)
         ]).then(function(results) {
