@@ -367,12 +367,11 @@ function startApp(userRole, userName) {
         navigateTo('dashboard', 'Dashboard');
     }
     
-    window.startRealtimeListener();
-
+        window.startRealtimeListener();
+}; // <--- INI TANDA TUTUP FUNGSI startApp YANG HILANG
 
 // ============================================================
 // 9. REALTIME LISTENER (Auto-Refresh halaman yang sedang aktif)
-// 👉 TARUH KODE REALTIME YANG BARU DI SINI
 // ============================================================
 window.startRealtimeListener = function () {
     var tablesToWatch = ['antrian', 'transaksi', 'rekam_medis', 'karyawan', 'obat', 'pasien'];
@@ -447,7 +446,6 @@ window.sb.auth.onAuthStateChange(function (event, session) {
             });
 
     } else {
-        // 👉 JANGAN LUPA TAMBAHKAN INI SAAT LOGOUT (Memutus koneksi Realtime)
         window.sb.removeAllChannels();
 
         var elName   = document.getElementById('user-name');
@@ -478,4 +476,4 @@ window.sb.auth.onAuthStateChange(function (event, session) {
         }
         showLogin();
     }
-});
+}); // <--- PASTIKAN INI ADA DI PALING AKHIR FIL
