@@ -158,12 +158,19 @@ window.AppApotekStockOpname = {
             Utils.toast('Gagal: ' + err.message, 'error'); 
         });
     },
-    // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
+
+        // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        // DIUBAH KE HURUF KAPITAL
-        window.sb.from('stock_opname_requests').select('*, users(nama)').eq('status', 'PENDING').order('created_at', { ascending: false }).then(function(snap) {
-            self.requests = snap.data || [];
+        // HAPUS FILTER STATUS. Kita ambil semua data, lalu saring di JavaScript berdasarkan 'catatan'
+        window.sb.from('stock_opname_requests').select('*, users(nama)').order('created_at', { ascending: false }).limit(50).then(function(snap) {
+            var allRequests = snap.data || [];
+            
+            // Saring: Hanya tampilkan yang catatannya MASIH "Menunggu approval" (Belum diproses Admin)
+            self.requests = allRequests.filter(function(req) {
+                return req.catatan === 'Menunggu approval';
+            });
+            
             self.renderApprovalList();
         }).catch(function(err) { 
             console.error(err);
@@ -267,9 +274,8 @@ window.AppApotekStockOpname = {
             var hasError = results.some(function(r) { return r.error; });
             if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
 
-            // DIUBAH KE HURUF KAPITAL
+            // AMAN: JANGAN UPDATE KOLOM 'status'. Cukup ubah 'catatan' agar hilang dari daftar pending
             return window.sb.from('stock_opname_requests').update({ 
-                status: 'APPROVED', 
                 catatan: 'Disetujui oleh ' + (window.currentUserName || 'Admin'),
                 updated_at: new Date().toISOString()
             }).eq('id', reqId);
@@ -288,9 +294,8 @@ window.AppApotekStockOpname = {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
-        // DIUBAH KE HURUF KAPITAL
+        // AMAN: JANGAN UPDATE KOLOM 'status'. Cukup ubah 'catatan' agar hilang dari daftar pending
         window.sb.from('stock_opname_requests').update({ 
-            status: 'REJECTED',
             catatan: 'Ditolak oleh ' + (window.currentUserName || 'Admin'),
             updated_at: new Date().toISOString()
         }).eq('id', reqId).then(function(res) {
@@ -302,4 +307,3 @@ window.AppApotekStockOpname = {
             Utils.toast('Gagal: ' + err.message, 'error'); 
         });
     }
-};
