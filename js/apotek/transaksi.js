@@ -506,7 +506,7 @@ window.AppApotekTransaksi = {
         var printWindow = window.open('', '', 'width=400,height=600');
         Utils.toast('Memproses transaksi...', 'info');
 
-        window.sb.from('transaksi').insert(obj).then(function(res) {
+        window.sb.from('transaksi').insert(obj).select().then(function(res) {
             if (res.error) throw res.error;
             var trxId = res.data[0].id;
             obj.id = trxId;
