@@ -1,6 +1,6 @@
 /**
  * js/apotek/stockOpname.js
- * Sistem Stock Opname dengan Approval (Multi-Role) — VERSI SUPABASE FIX
+ * Sistem Stock Opname dengan Approval (Multi-Role) — VERSI SUPABASE (FLAT TABLE)
  */
 
 window.AppApotekStockOpname = {
@@ -41,13 +41,9 @@ window.AppApotekStockOpname = {
     // ===== VIEW UNTUK APOTEKER (INPUT) =====
     loadMasterObat: function() {
         var self = this;
-        // FIX: Hapus .get(), tambah .select('*'), akses via snap.data
         window.sb.from('obat').select('*').order('nama_obat', { ascending: true }).then(function(snap) {
             self.data = snap.data || [];
-            // Supabase otomatis menyertakan 'id', kita hanya perlu tambahkan property stok_fisik
-            self.data.forEach(function(doc) { 
-                doc.stok_fisik = ''; 
-            });
+            self.data.forEach(function(doc) { doc.stok_fisik = ''; });
             self.renderInputForm();
         }).catch(function(err) { 
             console.error(err);
@@ -133,12 +129,17 @@ window.AppApotekStockOpname = {
 
         this.data.forEach(function(o) {
             if (o.stok_fisik !== '' && !isNaN(o.stok_fisik) && o.stok_fisik != (o.stok || 0)) {
+                // SESUAIKAN DENGAN STRUKTUR KOLOM TABEL ANDA
                 itemsToSubmit.push({
-                    obat_id: o.id, nama_obat: o.nama_obat, kode_obat: o.kode_obat,
-                    stok_sistem: o.stok || 0, stok_fisik: o.stok_fisik,
+                    tanggal: new Date().toISOString().split('T')[0],
+                    obat_id: o.id,
+                    nama_obat: o.nama_obat,
+                    stok_sistem: o.stok || 0,
+                    stok_fisik: o.stok_fisik,
                     selisih: o.stok_fisik - (o.stok || 0),
-                    nilaiSelisih: (o.stok_fisik - (o.stok || 0)) * (o.hpp || 0),
-                    satuan: o.satuan || '-'
+                    keterangan: 'Pengajuan Opname',
+                    user_id: window.currentUserId || null,
+                    status: 'pending' // PASTIKAN KOLOM INI SUDAH DITAMBAHKAN KE DB
                 });
             }
         });
@@ -147,30 +148,23 @@ window.AppApotekStockOpname = {
         if (!confirm('Ajukan ' + itemsToSubmit.length + ' perubahan stok ke Admin/Keuangan?')) return;
 
         Utils.toast('Mengirim pengajuan...', 'info');
-        window.sb.from('stock_opname_requests').insert({
-            tanggal: new Date().toISOString().split('T')[0],
-            diajukanOleh: window.currentUserName || 'Apoteker',
-            status: 'pending',
-            totalItem: itemsToSubmit.length,
-            items: itemsToSubmit,
-            createdAt: new Date().toISOString()
-        }).then(function(res) {
+        // Karena format flat, kita lakukan bulk insert
+        window.sb.from('stock_opname_requests').insert(itemsToSubmit).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Pengajuan opname terkirim! Menunggu approval.', 'success');
             self.loadMasterObat(); // Reset form
-        }).catch(function(err) { Utils.toast('Gagal: ' + err.message, 'error'); });
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal: ' + err.message, 'error'); 
+        });
     },
 
     // ===== VIEW UNTUK ADMIN / KEUANGAN (APPROVAL) =====
     loadRequests: function() {
         var self = this;
-        // FIX: Hapus .get(), tambah .select('*'), akses via snap.data
-        window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').then(function(snap) {
+        // Join ke tabel users untuk mendapatkan nama yang mengajukan
+        window.sb.from('stock_opname_requests').select('*, users(nama)').eq('status', 'pending').order('created_at', { ascending: false }).then(function(snap) {
             self.requests = snap.data || [];
-            // FIX: Sorting tanggal ISO string (bukan Firebase Timestamp)
-            self.requests.sort(function(a, b) { 
-                return (b.createdAt || '').localeCompare(a.createdAt || ''); 
-            });
             self.renderApprovalList();
         }).catch(function(err) { 
             console.error(err);
@@ -185,117 +179,134 @@ window.AppApotekStockOpname = {
             return;
         }
 
-        var html = '<div class="space-y-4">';
+        // KELOMPOKKAN DATA BERDASARKAN TANGGAL & USER (karena format tabel flat)
+        var grouped = {};
         this.requests.forEach(function(req) {
-            // FIX: Parsing ISO String (bukan .seconds seperti Firebase)
-            var tgl = req.createdAt ? new Date(req.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+            // Fallback nama user jika relasi gagal
+            var namaUser = (req.users && req.users.nama) ? req.users.nama : 'Apoteker';
+            var key = req.tanggal + '_' + (req.user_id || 'unknown') + '_' + namaUser;
+            
+            if (!grouped[key]) {
+                grouped[key] = {
+                    tanggal: req.tanggal,
+                    userName: namaUser,
+                    createdAt: req.created_at,
+                    items: []
+                };
+            }
+            grouped[key].items.push(req);
+        });
+
+        var html = '<div class="space-y-4">';
+        
+        var keys = Object.keys(grouped);
+        for (var k = 0; k < keys.length; k++) {
+            var group = grouped[keys[k]];
+            var tgl = group.createdAt ? new Date(group.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+            
             var totalRugi = 0, totalUntung = 0;
-            req.items.forEach(function(it) {
-                if(it.selisih < 0) totalRugi += Math.abs(it.nilaiSelisih);
-                else totalUntung += it.nilaiSelisih;
+            group.items.forEach(function(it) {
+                if(it.selisih < 0) totalRugi += Math.abs(it.selisih * (it.hpp || 0)); // Karena flat, HPP diambil dari join atau default 0
+                else totalUntung += it.selisih * (it.hpp || 0);
             });
 
             html += '<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5">';
             html += '<div class="flex justify-between items-start mb-3">';
-            html += '<div><h3 class="font-bold text-gray-800 dark:text-white">Pengajuan dari: ' + Utils.escapeHtml(req.diajukanOleh) + '</h3><p class="text-xs text-slate-400">' + tgl + '</p></div>';
-            html += '<span class="text-xs bg-amber-100 text-amber-600 px-2 py-1 rounded-full">Pending</span>';
+            html += '<div><h3 class="font-bold text-gray-800 dark:text-white">Pengajuan dari: ' + Utils.escapeHtml(group.userName) + '</h3><p class="text-xs text-slate-400">' + tgl + '</p></div>';
+            html += '<span class="text-xs bg-amber-100 text-amber-600 px-2 py-1 rounded-full">Pending (' + group.items.length + ' Item)</span>';
             html += '</div>';
             
             html += '<div class="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg mb-3 text-xs space-y-1">';
-            html += '<div class="flex justify-between"><span class="text-slate-500">Total Item Diajukan:</span><span class="font-bold">' + req.totalItem + ' Obat</span></div>';
+            html += '<div class="flex justify-between"><span class="text-slate-500">Total Item Diajukan:</span><span class="font-bold">' + group.items.length + ' Obat</span></div>';
             html += '<div class="flex justify-between"><span class="text-slate-500">Estimasi Nilai Kurang (Rugi):</span><span class="font-bold text-red-600">' + Utils.formatRupiah(totalRugi) + '</span></div>';
             html += '<div class="flex justify-between"><span class="text-slate-500">Estimasi Nilai Lebih (Untung):</span><span class="font-bold text-green-600">' + Utils.formatRupiah(totalUntung) + '</span></div>';
             html += '</div>';
 
+            // Kita kirim ID item pertama sebagai representasi grup untuk diambil datanya nanti
+            var firstItemId = group.items[0].id; 
             html += '<div class="flex gap-2">';
-            html += '<button onclick="AppApotekStockOpname.lihatDetail(\'' + req.id + '\')" class="flex-1 px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium">Lihat Detail</button>';
-            html += '<button onclick="AppApotekStockOpname.approveReq(\'' + req.id + '\')" class="flex-1 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">Approve & Update Stok</button>';
-            html += '<button onclick="AppApotekStockOpname.rejectReq(\'' + req.id + '\')" class="px-4 py-2 text-sm bg-red-100 hover:bg-red-200 text-red-600 rounded-lg font-medium">Tolak</button>';
+            html += '<button onclick="AppApotekStockOpname.lihatDetail(\'' + firstItemId + '\', \'' + group.tanggal + '\', \'' + (group.items[0].user_id || '') + '\')" class="flex-1 px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium">Lihat Detail</button>';
+            html += '<button onclick="AppApotekStockOpname.approveReq(\'' + group.tanggal + '\', \'' + (group.items[0].user_id || '') + '\')" class="flex-1 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">Approve & Update Stok</button>';
+            html += '<button onclick="AppApotekStockOpname.rejectReq(\'' + group.tanggal + '\', \'' + (group.items[0].user_id || '') + '\')" class="px-4 py-2 text-sm bg-red-100 hover:bg-red-200 text-red-600 rounded-lg font-medium">Tolak</button>';
             html += '</div>';
             html += '</div>';
-        });
+        }
+        
         html += '</div>';
         container.innerHTML = html;
         if(window.lucide) lucide.createIcons();
     },
 
-    lihatDetail: function(reqId) {
-        var req = this.requests.find(function(r) { return r.id === reqId; });
-        if(!req) return;
+    lihatDetail: function(firstItemId, tanggal, userId) {
+        // Ambil ulang data spesifik berdasarkan grup ini
+        var query = window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').eq('tanggal', tanggal);
+        if(userId) query = query.eq('user_id', userId);
 
-        var html = '<div class="p-6">';
-        html += '<div class="flex justify-between mb-4"><h3 class="font-bold text-lg">Detail Selisih Opname</h3><button onclick="Utils.closeModal()" class="text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button></div>';
-        html += '<div class="max-h-[60vh] overflow-y-auto border border-slate-100 rounded-lg">';
-        html += '<table class="w-full text-xs"><thead class="bg-slate-50 dark:bg-slate-900 sticky top-0"><tr><th class="p-2 text-left">Obat</th><th class="p-2 text-center">Sistem</th><th class="p-2 text-center">Fisik</th><th class="p-2 text-center">Selisih</th></tr></thead><tbody>';
-        
-        req.items.forEach(function(it) {
-            var selClass = it.selisih < 0 ? 'text-red-600 font-bold' : (it.selisih > 0 ? 'text-green-600 font-bold' : '');
-            html += '<tr class="border-t border-slate-100 dark:border-slate-700">';
-            html += '<td class="p-2">' + Utils.escapeHtml(it.nama_obat) + '</td>';
-            html += '<td class="p-2 text-center">' + it.stok_sistem + '</td>';
-            html += '<td class="p-2 text-center">' + it.stok_fisik + '</td>';
-            html += '<td class="p-2 text-center ' + selClass + '">' + (it.selisih > 0 ? '+'+it.selisih : it.selisih) + '</td>';
-            html += '</tr>';
-        });
+        query.then(function(snap) {
+            var items = snap.data || [];
+            var html = '<div class="p-6">';
+            html += '<div class="flex justify-between mb-4"><h3 class="font-bold text-lg">Detail Selisih Opname</h3><button onclick="Utils.closeModal()" class="text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button></div>';
+            html += '<div class="max-h-[60vh] overflow-y-auto border border-slate-100 rounded-lg">';
+            html += '<table class="w-full text-xs"><thead class="bg-slate-50 dark:bg-slate-900 sticky top-0"><tr><th class="p-2 text-left">Obat</th><th class="p-2 text-center">Sistem</th><th class="p-2 text-center">Fisik</th><th class="p-2 text-center">Selisih</th></tr></thead><tbody>';
+            
+            items.forEach(function(it) {
+                var selClass = it.selisih < 0 ? 'text-red-600 font-bold' : (it.selisih > 0 ? 'text-green-600 font-bold' : '');
+                html += '<tr class="border-t border-slate-100 dark:border-slate-700">';
+                html += '<td class="p-2">' + Utils.escapeHtml(it.nama_obat) + '</td>';
+                html += '<td class="p-2 text-center">' + it.stok_sistem + '</td>';
+                html += '<td class="p-2 text-center">' + it.stok_fisik + '</td>';
+                html += '<td class="p-2 text-center ' + selClass + '">' + (it.selisih > 0 ? '+'+it.selisih : it.selisih) + '</td>';
+                html += '</tr>';
+            });
 
-        html += '</tbody></table></div></div>';
-        Utils.openModal(html);
-        if(window.lucide) lucide.createIcons();
+            html += '</tbody></table></div></div>';
+            Utils.openModal(html);
+            if(window.lucide) lucide.createIcons();
+        }).catch(function(err) { Utils.toast('Gagal: ' + err.message, 'error'); });
     },
 
-    approveReq: function(reqId) {
+    approveReq: function(tanggal, userId) {
         var self = this;
-        var req = this.requests.find(function(r) { return r.id === reqId; });
-        if(!req) return;
-
         if(!confirm('Setujui pengajuan ini? Stok sistem akan otomatis diperbarui.')) return;
 
         Utils.toast('Memproses update stok...', 'info');
 
-        // ==========================================
-        // FIX BESAR: HAPUS db.batch() FIREBASE
-        // Ganti dengan Promise.all loop khas Supabase
-        // ==========================================
-        
-        // 1. Kumpulkan promise untuk update stok master obat
-        var updateStokPromises = req.items.map(function(it) {
-            var delta = (typeof it.selisih === 'number') ? it.selisih : ((it.stok_fisik || 0) - (it.stok_sistem || 0));
-            
-            // Ambil stok saat ini, lalu tambahkan delta (mencegah penimpaan jika ada transaksi setelah opname diajukan)
-            return window.sb.from('obat').select('stok').eq('id', it.obat_id).single()
-                .then(function(res) {
-                    var currentStok = res.data ? (res.data.stok || 0) : 0;
-                    var newStok = currentStok + delta;
-                    
-                    return window.sb.from('obat').update({ 
-                        stok: newStok, 
-                        updated_at: new Date().toISOString() 
-                    }).eq('id', it.obat_id);
-                });
-        });
+        // 1. Ambil data pending dari grup ini
+        var query = window.sb.from('stock_opname_requests').select('*').eq('status', 'pending').eq('tanggal', tanggal);
+        if(userId) query = query.eq('user_id', userId);
 
-        // Jalankan semua update stok secara paralel
-        Promise.all(updateStokPromises).then(function(results) {
-            // Cek jika ada error di salah satu update
-            var hasError = results.some(function(r) { return r.error; });
-            if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
+        query.then(function(snap) {
+            var items = snap.data || [];
+            if (items.length === 0) throw new Error('Data tidak ditemukan');
 
-            // 2. Update status pengajuan jadi approved
-            return window.sb.from('stock_opname_requests').update({ 
-                status: 'approved', 
-                approvedBy: window.currentUserName || 'Admin',
-                approvedAt: new Date().toISOString()
-            }).eq('id', reqId);
-        }).then(function(res) {
-            if (res.error) throw res.error;
+            // 2. Kumpulkan promise untuk update stok master obat
+            var updateStokPromises = items.map(function(it) {
+                return window.sb.from('obat').select('stok').eq('id', it.obat_id).single()
+                    .then(function(res) {
+                        var currentStok = res.data ? (res.data.stok || 0) : 0;
+                        var newStok = currentStok + it.selisih; // Otomatis tambah/kurang berdasarkan selisih
+                        
+                        return window.sb.from('obat').update({ 
+                            stok: newStok, 
+                            updated_at: new Date().toISOString() 
+                        }).eq('id', it.obat_id);
+                    });
+            });
 
-            // 3. Catat ke history (Hapus .doc(), langsung .insert)
-            return window.sb.from('stock_opname_history').insert({
-                tanggal: req.tanggal || (req.createdAt ? new Date(req.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
-                totalItem: req.totalItem,
-                items: req.items,
-                approvedBy: window.currentUserName || 'Admin',
-                createdAt: new Date().toISOString()
+            // Jalankan semua update stok paralel
+            return Promise.all(updateStokPromises).then(function(results) {
+                var hasError = results.some(function(r) { return r.error; });
+                if (hasError) throw new Error('Gagal mengupdate salah satu stok obat');
+
+                // 3. Update status semua item di grup ini jadi 'approved'
+                var updateStatusQuery = window.sb.from('stock_opname_requests').update({ 
+                    status: 'approved',
+                    keterangan: 'Disetujui oleh ' + (window.currentUserName || 'Admin')
+                }).eq('status', 'pending').eq('tanggal', tanggal);
+                
+                if(userId) updateStatusQuery = updateStatusQuery.eq('user_id', userId);
+
+                return updateStatusQuery;
             });
         }).then(function(res) {
             if (res.error) throw res.error;
@@ -308,16 +319,18 @@ window.AppApotekStockOpname = {
         });
     },
 
-    rejectReq: function(reqId) {
+    rejectReq: function(tanggal, userId) {
         var self = this;
         if(!confirm('Tolak pengajuan ini?')) return;
         
-        // FIX: TAMBAHKAN .eq('id', reqId) SEBELUM .then()
-        window.sb.from('stock_opname_requests').update({ 
+        var query = window.sb.from('stock_opname_requests').update({ 
             status: 'rejected',
-            approvedBy: window.currentUserName || 'Admin',
-            approvedAt: new Date().toISOString()
-        }).eq('id', reqId).then(function(res) {
+            keterangan: 'Ditolak oleh ' + (window.currentUserName || 'Admin')
+        }).eq('status', 'pending').eq('tanggal', tanggal);
+        
+        if(userId) query = query.eq('user_id', userId);
+
+        query.then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Pengajuan ditolak.', 'info');
             self.loadRequests();
