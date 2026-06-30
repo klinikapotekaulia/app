@@ -54,7 +54,11 @@ window.AppKeuanganPayroll = {
         if (!monthInput) return;
         var bulan = monthInput.value;
         var startDate = bulan + '-01';
-        var endDate = bulan + '-31';
+        // FIX: Hitung tanggal terakhir bulan ini secara dinamis ( Juni = 30, Juli = 31, dst )
+        var tahun = parseInt(bulan.split('-')[0]);
+        var bulanAngka = parseInt(bulan.split('-')[1]);
+        var tanggalTerakhir = new Date(tahun, bulanAngka, 0).getDate(); 
+        var endDate = bulan + '-' + String(tanggalTerakhir).padStart(2, '0');
 
         Promise.all([
             window.sb.from('karyawan').select('*').eq('status', 'aktif'),
