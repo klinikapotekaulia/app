@@ -219,7 +219,7 @@ window.AppKlinikPasien = {
 
     _doHapus: function(id) {
         Utils.closeModal();
-        window.sb.from('pasien').delete().eq('id', id).then(function(res) {
+        window.sb.from('pasien').update({ status: 'batal' }).eq('id', id).then(function(res) {
             if (res.error) throw res.error;
             Utils.toast('Berhasil dihapus', 'success');
             AppKlinikPasien.init();
