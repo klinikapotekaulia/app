@@ -27,12 +27,14 @@ window.AppLaporanPengeluaran = {
 
     init: function() {
         var self = this;
-        // Ambil 50 pengeluaran terbaru
-        window.sb.from('kas_keluar').order('createdAt', { ascending: false }).limit(50).get().then(snap => {
-            self.data = [];
-            (data || []).forEach(doc => { var d = doc; d.id = doc.id; self.data.push(d); });
+        // FIX: Hapus .get(), ganti .select('*'), akses via snap.data
+        window.sb.from('kas_keluar').select('*').order('createdAt', { ascending: false }).limit(50).then(function(snap) {
+            self.data = snap.data || [];
             self.renderList();
-        }).catch(err => Utils.toast('Gagal memuat: ' + err.message, 'error'));
+        }).catch(function(err) { 
+            console.error(err);
+            Utils.toast('Gagal memuat: ' + err.message, 'error'); 
+        });
     },
 
     renderList: function() {
